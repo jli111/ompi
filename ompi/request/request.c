@@ -36,6 +36,7 @@ size_t                           ompi_request_completed = 0;
 size_t                           ompi_request_failed = 0;
 opal_mutex_t                     ompi_request_lock;
 opal_condition_t                 ompi_request_cond;
+int 				 mca_btl_tcp_progress_thread_trigger = -1;
 ompi_predefined_request_t        ompi_request_null;
 ompi_predefined_request_t        *ompi_request_null_addr = &ompi_request_null;
 ompi_request_t                   ompi_request_empty;

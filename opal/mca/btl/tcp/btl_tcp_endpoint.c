@@ -89,6 +89,7 @@ static void mca_btl_tcp_endpoint_construct(mca_btl_tcp_endpoint_t* endpoint)
     OBJ_CONSTRUCT(&endpoint->endpoint_frags, opal_list_t);
     OBJ_CONSTRUCT(&endpoint->endpoint_send_lock, opal_mutex_t);
     OBJ_CONSTRUCT(&endpoint->endpoint_recv_lock, opal_mutex_t);
+ 
 }
 
 /*
@@ -838,7 +839,7 @@ static void mca_btl_tcp_endpoint_complete_connect(mca_btl_base_endpoint_t* btl_e
 static void mca_btl_tcp_endpoint_recv_handler(int sd, short flags, void* user)
 {
     mca_btl_base_endpoint_t* btl_endpoint = (mca_btl_base_endpoint_t *)user;
-
+    //ompi_request_lock.btl_progress_thread = mca_btl_tcp_progress_thread_trigger;
     /* Make sure we don't have a race between a thread that remove the
      * recv event, and one event already scheduled.
      */

@@ -85,6 +85,16 @@ static int mca_btl_tcp_component_register(void);
 static int mca_btl_tcp_component_open(void);
 static int mca_btl_tcp_component_close(void);
 
+opal_event_base_t* mca_btl_tcp_event_base = NULL;
+#if MCA_BTL_TCP_USES_PROGRESS_THREAD
+//int mca_btl_tcp_progress_thread_trigger = -1;
+int mca_btl_tcp_pipe_to_progress[2] = { -1, -1 };
+static opal_thread_t mca_btl_tcp_progress_thread;
+opal_list_t mca_btl_tcp_ready_frag_pending_queue;
+opal_mutex_t mca_btl_tcp_ready_frag_mutex;
+#endif  /* MCA_BTL_TCP_USES_PROGRESS_THREAD */
+static char *mca_btl_tcp_if_seq_string;
+
 mca_btl_tcp_component_t mca_btl_tcp_component = {
     .super = {
         /* First, the mca_base_component_t struct containing meta information
@@ -646,6 +656,80 @@ static int mca_btl_tcp_component_create_instances(void)
     return ret;
 }
 
+#if MCA_BTL_TCP_USES_PROGRESS_THREAD
+static void* mca_btl_tcp_progress_thread_engine(opal_object_t *obj)
+{
+    opal_thread_t* current_thread = (opal_thread_t*)obj;
+
+     /*
+      * Bind BTL thread to a specific core.
+      * This part is temporary, until we find the way to bind the thread efficiently.
+      */
+
+        hwloc_topology_t topo;
+        hwloc_topology_init(&topo);
+        hwloc_topology_load(topo);
+        hwloc_bitmap_t set;
+        set = hwloc_bitmap_alloc();
+        hwloc_bitmap_zero(set);
+        hwloc_bitmap_set(set,2);
+
+        hwloc_set_cpubind(topo,set,HWLOC_CPUBIND_THREAD);
+
+
+
+    while( 1 == (*((int*)current_thread->t_arg)) ) {
+        opal_event_loop(mca_btl_tcp_event_base, OPAL_EVLOOP_ONCE);
+    }
+    (*((int*)current_thread->t_arg)) = -1;
+    return NULL;
+}
+
+static void mca_btl_tcp_component_event_async_handler(int fd, short unused, void *context)
+{
+    opal_event_t* event;
+    int rc;
+
+    rc = read(fd, (void*)&event, sizeof(opal_event_t*));
+    assert( fd == mca_btl_tcp_pipe_to_progress[0] );
+    if( 0 == rc ) {
+        /* The main thread closed the pipe to trigger the shutdown procedure */
+        opal_thread_t* current_thread = (opal_thread_t*)context;
+        (*((int*)current_thread->t_arg)) = 0;
+    } else {
+        opal_event_add(event, 0);
+    }
+}
+
+int mca_btl_tcp_component_progress( void )
+{
+    mca_btl_tcp_frag_t* frag;
+    int count = 0;
+
+    for( ;; ) {
+        MCA_BTL_TCP_CRITICAL_SECTION_ENTER(&mca_btl_tcp_ready_frag_mutex); 
+        frag = (mca_btl_tcp_frag_t*)opal_list_remove_first(&mca_btl_tcp_ready_frag_pending_queue);
+        MCA_BTL_TCP_CRITICAL_SECTION_LEAVE(&mca_btl_tcp_ready_frag_mutex);
+        if( NULL == frag ) break;
+
+        switch(frag->next_step) {
+        case MCA_BTL_TCP_FRAG_STEP_SEND_COMPLETE:
+            MCA_BTL_TCP_COMPLETE_FRAG_SEND(frag);
+            count++;
+            break;
+        case MCA_BTL_TCP_FRAG_STEP_RECV_COMPLETE:
+            MCA_BTL_TCP_RECV_TRIGGER_CB(frag);
+            MCA_BTL_TCP_FRAG_RETURN(frag);
+            count++;
+            break;
+        default:
+            break;
+        }
+    }
+    return count;
+}
+#endif
+
 /*
  * Create a listen socket and bind to all interfaces
  */
@@ -808,7 +892,66 @@ static int mca_btl_tcp_component_create_listen(uint16_t af_family)
         }
     }
 
-    /* register listen port */
+    mca_btl_tcp_event_base = opal_event_base;  /* fallback value */
+#if MCA_BTL_TCP_USES_PROGRESS_THREAD
+    if(mca_btl_tcp_component.tcp_enable_progress_thread) {
+        /* Declare our intent to use threads. */
+        opal_event_use_threads();
+        if( NULL == (mca_btl_tcp_event_base = opal_event_base_create()) ) {
+            BTL_ERROR(("BTL TCP failed to create progress event base"));
+            mca_btl_tcp_event_base = opal_event_base;
+            goto move_forward_with_no_thread;
+        }
+        opal_event_base_priority_init(mca_btl_tcp_event_base, OPAL_EVENT_NUM_PRI);
+
+        /* construct the thread object */
+        OBJ_CONSTRUCT(&mca_btl_tcp_progress_thread, opal_thread_t);
+
+        /**
+         * Create a pipe to communicate between the main thread and the progress thread.
+         */
+        if (0 != pipe(mca_btl_tcp_pipe_to_progress)) {
+            opal_event_base_free(mca_btl_tcp_event_base);
+            mca_btl_tcp_event_base = opal_event_base;
+            goto move_forward_with_no_thread;
+        }
+        /* setup the receiving end of the pipe as non-blocking */
+        if((flags = fcntl(mca_btl_tcp_pipe_to_progress[0], F_GETFL, 0)) < 0) {
+            BTL_ERROR(("fcntl(F_GETFL) failed: %s (%d)", 
+                       strerror(opal_socket_errno), opal_socket_errno));
+        } else {
+            flags |= O_NONBLOCK;
+            if(fcntl(mca_btl_tcp_pipe_to_progress[0], F_SETFL, flags) < 0)
+                BTL_ERROR(("fcntl(F_SETFL) failed: %s (%d)", 
+                           strerror(opal_socket_errno), opal_socket_errno));
+        }
+        /* Progress thread event */
+        opal_event_set(mca_btl_tcp_event_base, &mca_btl_tcp_component.tcp_recv_thread_async_event,
+                       mca_btl_tcp_pipe_to_progress[0],
+                       OPAL_EV_READ|OPAL_EV_PERSIST,
+                       mca_btl_tcp_component_event_async_handler,
+                       &mca_btl_tcp_progress_thread );
+        opal_event_add(&mca_btl_tcp_component.tcp_recv_thread_async_event, 0);
+
+        /* fork off a thread to progress it */
+        mca_btl_tcp_progress_thread.t_run = mca_btl_tcp_progress_thread_engine;
+        mca_btl_tcp_progress_thread.t_arg = &mca_btl_tcp_progress_thread_trigger;
+        mca_btl_tcp_progress_thread_trigger = 1;  /* thread up and running */
+        if( OPAL_SUCCESS != (rc = opal_thread_start(&mca_btl_tcp_progress_thread)) ) {
+            BTL_ERROR(("BTL TCP progress thread initialization failed (%d)", rc));
+            opal_event_base_free(mca_btl_tcp_event_base);
+            /* fall back to only one event base (the one shared by the entire Open MPI framework */
+            mca_btl_tcp_progress_thread_trigger = -1;  /* thread not started */
+            mca_btl_tcp_event_base = opal_event_base;
+            ompi_request_lock.btl_progress_thread = -1;
+            goto move_forward_with_no_thread;
+        }
+        mca_btl_tcp_component.super.btl_progress = mca_btl_tcp_component_progress;
+	ompi_request_lock.btl_progress_thread = mca_btl_tcp_progress_thread_trigger;
+    }
+ move_forward_with_no_thread:
+#endif
+
     if (AF_INET == af_family) {
         opal_event_set(opal_event_base, &mca_btl_tcp_component.tcp_recv_event,
                         mca_btl_tcp_component.tcp_listen_sd,

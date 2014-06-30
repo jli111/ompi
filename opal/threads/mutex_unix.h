@@ -51,14 +51,16 @@ struct opal_mutex_t {
     opal_object_t super;
 
     pthread_mutex_t m_lock_pthread;
+    pthread_mutex_t btl_progress_lock;
+#endif
 
 #if OPAL_ENABLE_DEBUG
     int m_lock_debug;
     const char *m_lock_file;
     int m_lock_line;
 #endif
-
     opal_atomic_lock_t m_lock_atomic;
+    int btl_progress_thread;
 };
 OPAL_DECLSPEC OBJ_CLASS_DECLARATION(opal_mutex_t);
 
