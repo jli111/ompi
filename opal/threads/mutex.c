@@ -54,8 +54,16 @@ static void opal_mutex_construct(opal_mutex_t *m)
 
     /* Without debugging, choose the fastest available mutexes */
     pthread_mutex_init(&m->m_lock_pthread, NULL);
+    pthread_mutex_init(&m->btl_progress_lock, NULL);
 
 #endif /* OPAL_ENABLE_DEBUG */
+
+    m->btl_progress_thread=-1;
+#if OPAL_ENABLE_DEBUG
+    m->m_lock_debug = 0;
+    m->m_lock_file = NULL;
+    m->m_lock_line = 0;
+#endif
 
 #if OPAL_HAVE_ATOMIC_SPINLOCKS
     opal_atomic_init( &m->m_lock_atomic, OPAL_ATOMIC_UNLOCKED );

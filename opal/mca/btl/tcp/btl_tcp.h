@@ -42,6 +42,7 @@
 #include "opal/mca/btl/base/base.h"
 #include "opal/mca/mpool/mpool.h"
 #include "opal/class/opal_hash_table.h"
+#include "ompi/request/request.h"
 
 #define MCA_BTL_TCP_STATISTICS 0
 BEGIN_C_DECLS
