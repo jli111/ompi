@@ -17,7 +17,7 @@
  */
 
 #include "opal_config.h"
-
+#include <time.h>
 #include "opal/threads/condition.h"
 
 static void opal_condition_construct(opal_condition_t *c)

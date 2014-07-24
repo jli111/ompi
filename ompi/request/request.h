@@ -442,7 +442,7 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
     if( OPAL_UNLIKELY(MPI_SUCCESS != request->req_status.MPI_ERROR) ) {
         ompi_request_failed++;
     }
-    if(with_signal) {
+    if(1) {
         /* Broadcast the condition, otherwise if there is already a thread
          * waiting on another request it can use all signals.
          */
