@@ -19,6 +19,7 @@
 #include "opal_config.h"
 #include <time.h>
 #include "opal/threads/condition.h"
+int btl_progress_signal_count=0;
 
 static void opal_condition_construct(opal_condition_t *c)
 {
