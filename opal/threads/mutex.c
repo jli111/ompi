@@ -44,13 +44,12 @@ static void opal_mutex_construct(opal_mutex_t *m)
 #elif OPAL_HAVE_PTHREAD_MUTEX_ERRORCHECK
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK);
 #endif /* OPAL_HAVE_PTHREAD_MUTEX_ERRORCHECK_NP */
-
     pthread_mutex_init(&m->m_lock_pthread, &attr);
-    pthread_mutexattr_destroy(&attr);
-
     m->m_lock_debug = 0;
     m->m_lock_file = NULL;
     m->m_lock_line = 0;
+    pthread_mutex_init(&m->btl_progress_lock, NULL);
+    pthread_mutexattr_destroy(&attr);
 #else
 
     /* Without debugging, choose the fastest available mutexes */

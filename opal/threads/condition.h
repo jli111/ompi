@@ -45,6 +45,8 @@ BEGIN_C_DECLS
 
 struct opal_condition_t {
     opal_object_t super;
+    pthread_cond_t btl_progress_cond;
+    opal_mutex_t request_lock;
     volatile int c_waiting;
     volatile int c_signaled;
 };
@@ -71,6 +73,21 @@ static inline int opal_condition_wait(opal_condition_t *c, opal_mutex_t *m)
             opal_mutex_unlock(m);
             opal_progress();
             OPAL_CR_TEST_CHECKPOINT_READY_STALL();
+
+	/*
+ 	 * If we have btl progress thread, we can do the sleep wait instead of 
+ 	 * busy wait to reduce the cpu usage after some certain amount of time.
+ 	 */
+	    
+	    if(m->btl_progress_thread > 0 && elapsed_time2 - elapsed_time1 > 90){
+		pthread_mutex_lock(&(c->request_lock).btl_progress_lock);
+		while(btl_progress_signal_count < 0)
+			pthread_cond_wait(&c->btl_progress_cond,&c->request_lock.btl_progress_lock);
+		btl_progress_signal_count--;
+		pthread_mutex_unlock(&c->request_lock.btl_progress_lock);
+	    	elapsed_time1 = (double)opal_timer_base_get_usec();
+	    }	
+
             opal_mutex_lock(m);
         }
     } else {

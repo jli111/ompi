@@ -120,6 +120,7 @@ OMPI_DECLSPEC OBJ_CLASS_DECLARATION( mca_pml_base_send_request_t );
         (request)->req_ompi.req_complete = false;             \
         (request)->req_ompi.req_state = OMPI_REQUEST_ACTIVE;  \
         (request)->req_ompi.req_status._cancelled = 0;        \
+        (request)->req_ompi.condition = 0x0; 	              \
     } while (0)
 
 /**
