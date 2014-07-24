@@ -37,6 +37,11 @@
 #include "opal/threads/condition.h"
 #include "ompi/constants.h"
 
+
+
+
+
+
 BEGIN_C_DECLS
 
 /**
@@ -111,6 +116,10 @@ struct ompi_request_t {
     ompi_request_complete_fn_t req_complete_cb; /**< Called when the request is MPI completed */
     void *req_complete_cb_data;
     ompi_mpi_object_t req_mpi_object;           /**< Pointer to MPI object that created this request */
+
+	
+    //Experimental Variables
+    opal_condition_t *condition;
 };
 
 /**
@@ -143,6 +152,7 @@ typedef struct ompi_predefined_request_t ompi_predefined_request_t;
         (request)->req_complete = false;              \
         (request)->req_state = OMPI_REQUEST_INACTIVE; \
         (request)->req_persistent = (persistent);     \
+        (request)->condition = 0x0;                   \
     } while (0); 
 
 /**
@@ -169,6 +179,16 @@ do {                                                                    \
         (request)->req_f_to_c_index = MPI_UNDEFINED;                    \
     }                                                                   \
 } while (0); 
+
+
+/* Experimental phase, condition per wait operation*/
+
+#define OMPI_CREATE_REQUEST_CONDITION(cond)			\
+	do {							\
+		opal_condition_t req_cond;			\
+		OBJ_CONSTRUCT(&req_cond,opal_condition_t);	\
+		cond = &req_cond;				\
+	}while (0);	
 
 /**
  * Non-blocking test for request completion.
@@ -371,6 +391,20 @@ static inline int ompi_request_free(ompi_request_t** request)
  */
 static inline void ompi_request_wait_completion(ompi_request_t *req)
 {
+
+ /*
+ * Experimental Phase, create new condition per wait.
+ * If the condition is 1 then we are completed, no need to wait anymore.
+ * Otherwise, we wait
+ **/
+     opal_condition_t request_cond;
+     OBJ_CONSTRUCT(&request_cond,opal_condition_t);
+
+     /**** Request already complete ****/
+     if ( !opal_atomic_cmpset_64(&req->condition,0,&request_cond)){
+        opal_condition_broadcast(&request_cond);
+	}else req->condition = &request_cond;
+
     if(false == req->req_complete) {
 #if OPAL_ENABLE_PROGRESS_THREADS
         if(opal_progress_spin(&req->req_complete)) {
@@ -380,7 +414,7 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
         OPAL_THREAD_LOCK(&ompi_request_lock);
         ompi_request_waiting++;
         while(false == req->req_complete) {
-            opal_condition_wait(&ompi_request_cond, &ompi_request_lock);
+            opal_condition_wait(req->condition, &ompi_request_lock);
         }
         ompi_request_waiting--;
         OPAL_THREAD_UNLOCK(&ompi_request_lock);
@@ -408,11 +442,21 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
     if( OPAL_UNLIKELY(MPI_SUCCESS != request->req_status.MPI_ERROR) ) {
         ompi_request_failed++;
     }
-    if(with_signal && ompi_request_waiting) {
+    if(with_signal) {
         /* Broadcast the condition, otherwise if there is already a thread
          * waiting on another request it can use all signals.
          */
-        opal_condition_broadcast(&ompi_request_cond);
+        if(opal_atomic_cmpset_64 (&request->condition,0,1)){
+		// The request is already completed. We changed the condtion to one 
+		// and do nothing. everything is completed.
+	}
+	else if(request->condition != 1){
+		// Someone is waiting on this condition, we broadcast the condition
+		// to release it from the wait.
+        	pthread_mutex_lock(&((*request->condition).request_lock.btl_progress_lock));
+        	opal_condition_broadcast(request->condition);
+		pthread_mutex_unlock(&((*request->condition).request_lock.btl_progress_lock));
+	}
     }
     return OMPI_SUCCESS;
 }
@@ -420,3 +464,4 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
 END_C_DECLS
 
 #endif
+

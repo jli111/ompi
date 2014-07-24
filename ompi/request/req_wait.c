@@ -37,10 +37,10 @@ int ompi_request_default_wait(
     ompi_request_t ** req_ptr,
     ompi_status_public_t * status)
 {
+
     ompi_request_t *req = *req_ptr;
-
     ompi_request_wait_completion(req);
-
+ 
 #if OPAL_ENABLE_FT_CR == 1
     OMPI_CRCP_REQUEST_COMPLETE(req);
 #endif
@@ -75,6 +75,10 @@ int ompi_request_default_wait(
     if (MPI_SUCCESS != req->req_status.MPI_ERROR) {
         return req->req_status.MPI_ERROR;
     }
+
+    /* Free the condition */
+    //OBJ_DESTRUCT(&req->condition);
+  
 
     /* If there's an error while freeing the request, assume that the
        request is still there.  Otherwise, Bad Things will happen
@@ -225,11 +229,31 @@ int ompi_request_default_wait_all( size_t count,
     ompi_request_t **rptr;
     ompi_request_t *request;
     int mpi_error = OMPI_SUCCESS;
+    int wait_needed = 0;
+	rptr = requests;
+        request = *rptr;
+
+ /*
+ *      * Experimental Phase, create new condition per wait.
+ *           * If the condition is 1 then we are completed, no need to wait anymore.
+ *                * Otherwise, we wait
+ *                     */
+     opal_condition_t request_cond;
+     OBJ_CONSTRUCT(&request_cond,opal_condition_t);
+
+
 
     rptr = requests;
     for (i = 0; i < count; i++) {
         request = *rptr++;
 
+     /**** Request already complete ****/
+     if( !opal_atomic_cmpset_64(&request->condition,0,&request_cond)){
+	// Request already completed from OMPI level.
+	// Mark this newly created condition as completed.
+     }else wait_needed = 1;	
+    	
+        request->condition = &request_cond;
         if (request->req_complete == true) {
             if( OPAL_UNLIKELY( MPI_SUCCESS != request->req_status.MPI_ERROR ) ) {
                 failed++;
@@ -237,6 +261,8 @@ int ompi_request_default_wait_all( size_t count,
             completed++;
         }
     }
+    // Everything is done  - mark the condition as completed.
+    if(!wait_needed) opal_condition_broadcast(&request_cond);
 
     if( failed > 0 ) {
         goto finish;
@@ -284,7 +310,7 @@ int ompi_request_default_wait_all( size_t count,
              * wait until at least pending requests complete
              */
             while (pending > ompi_request_completed - start) {
-                opal_condition_wait(&ompi_request_cond, &ompi_request_lock);
+                opal_condition_wait(&request_cond, &ompi_request_lock);
                 /*
                  * Check for failed requests. If one request fails, then
                  * this operation completes in error marking the remaining
