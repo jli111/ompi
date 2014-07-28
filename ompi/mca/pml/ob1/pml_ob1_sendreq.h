@@ -251,7 +251,15 @@ send_request_pml_complete(mca_pml_ob1_send_request_t *sendreq)
         mca_pml_base_bsend_request_fini((ompi_request_t*)sendreq);
     }
 
-    OPAL_THREAD_LOCK(&ompi_request_lock);
+    //OPAL_THREAD_LOCK(&ompi_request_lock);
+    int locked = 0;
+    if ( !opal_atomic_cmpset_64 (&sendreq->req_send.req_base.req_ompi.condition,0,1)){
+	// We failed to mark it as complete, this means the condition has been created
+	// and someone is waiting for it. We will take the lock here otherwise, we mark it as
+	// completed and let if go.
+        OPAL_THREAD_LOCK(&sendreq->req_send.req_base.req_ompi.condition->request_lock);
+        locked = 1;
+   } 
     if(false == sendreq->req_send.req_base.req_ompi.req_complete) {
         /* Should only be called for long messages (maybe synchronous) */
         MCA_PML_OB1_SEND_REQUEST_MPI_COMPLETE(sendreq, true);
@@ -265,7 +273,7 @@ send_request_pml_complete(mca_pml_ob1_send_request_t *sendreq)
     if(sendreq->req_send.req_base.req_free_called) {
         MCA_PML_OB1_SEND_REQUEST_RETURN(sendreq);
     }
-    OPAL_THREAD_UNLOCK(&ompi_request_lock);
+    if(locked) OPAL_THREAD_UNLOCK(&sendreq->req_send.req_base.req_ompi.condition->request_lock);
 }
 
 /* returns true if request was completed on PML level */

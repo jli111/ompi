@@ -409,13 +409,11 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
             return;
         }
 #endif
-        OPAL_THREAD_LOCK(&ompi_request_lock);
-        ompi_request_waiting++;
+        OPAL_THREAD_LOCK(&req->condition->request_lock);
         while(false == req->req_complete) {
-            opal_condition_wait(req->condition, &ompi_request_lock);
+            opal_condition_wait(req->condition, &req->condition->request_lock);
         }
-        ompi_request_waiting--;
-        OPAL_THREAD_UNLOCK(&ompi_request_lock);
+        OPAL_THREAD_UNLOCK(&req->condition->request_lock);
     }
 }
 

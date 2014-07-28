@@ -277,7 +277,7 @@ int ompi_request_default_wait_all( size_t count,
          * not completed pend on condition variable until a request
          * completes
          */
-        OPAL_THREAD_LOCK(&ompi_request_lock);
+        OPAL_THREAD_LOCK(&request_cond.request_lock);
         ompi_request_waiting++;
 #if OPAL_ENABLE_MULTI_THREADS
         /*
@@ -297,7 +297,7 @@ int ompi_request_default_wait_all( size_t count,
         }
         if( failed > 0 ) {
             ompi_request_waiting--;
-            OPAL_THREAD_UNLOCK(&ompi_request_lock);
+            OPAL_THREAD_UNLOCK(&request_cond.request_lock);
             goto finish;
         }
 #endif  /* OPAL_ENABLE_MULTI_THREADS */
@@ -310,7 +310,7 @@ int ompi_request_default_wait_all( size_t count,
              * wait until at least pending requests complete
              */
             while (pending > ompi_request_completed - start) {
-                opal_condition_wait(&request_cond, &ompi_request_lock);
+                opal_condition_wait(&request_cond, &request_cond.request_lock);
                 /*
                  * Check for failed requests. If one request fails, then
                  * this operation completes in error marking the remaining
@@ -319,7 +319,7 @@ int ompi_request_default_wait_all( size_t count,
                 if( OPAL_UNLIKELY( 0 < (ompi_request_failed - start_failed) ) ) {
                     failed += (ompi_request_failed - start_failed);
                     ompi_request_waiting--;
-                    OPAL_THREAD_UNLOCK(&ompi_request_lock);
+                    OPAL_THREAD_UNLOCK(&request_cond.request_lock);
                     goto finish;
                 }
             }
@@ -338,7 +338,7 @@ int ompi_request_default_wait_all( size_t count,
             }
         }
         ompi_request_waiting--;
-        OPAL_THREAD_UNLOCK(&ompi_request_lock);
+        OPAL_THREAD_UNLOCK(&request_cond.request_lock);
     }
 
 #if OPAL_ENABLE_FT_CR == 1
