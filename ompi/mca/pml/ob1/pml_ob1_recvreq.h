@@ -169,11 +169,18 @@ recv_request_pml_complete(mca_pml_ob1_recv_request_t *recvreq)
     }
     recvreq->req_rdma_cnt = 0;
 
-    OPAL_THREAD_LOCK(&ompi_request_lock);
-    if(true == recvreq->req_recv.req_base.req_free_called) {
         if( MPI_SUCCESS != recvreq->req_recv.req_base.req_ompi.req_status.MPI_ERROR ) {
             ompi_mpi_abort(&ompi_mpi_comm_world.comm, MPI_ERR_REQUEST);
         }
+    int locked = 0;
+    if ( !opal_atomic_cmpset_64 (&recvreq->req_recv.req_base.req_ompi.condition,0,1)){
+	// We failed to mark it as complete, this means the condition has been created
+	// and someone is waiting for it. We will take the lock here otherwise, we mark it as
+	// completed and let if go.
+        OPAL_THREAD_LOCK(&recvreq->req_recv.req_base.req_ompi.condition->request_lock);
+        locked = 1;
+   } 
+   if(true == recvreq->req_recv.req_base.req_free_called) {
         MCA_PML_OB1_RECV_REQUEST_RETURN(recvreq);
     } else {
         /* initialize request status */
@@ -192,7 +199,7 @@ recv_request_pml_complete(mca_pml_ob1_recv_request_t *recvreq)
         }
         MCA_PML_OB1_RECV_REQUEST_MPI_COMPLETE(recvreq);
     }
-    OPAL_THREAD_UNLOCK(&ompi_request_lock);
+    if(locked) OPAL_THREAD_UNLOCK(&recvreq->req_recv.req_base.req_ompi.condition->request_lock);
 }
 
 static inline bool
