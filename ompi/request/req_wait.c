@@ -240,7 +240,7 @@ int ompi_request_default_wait_all( size_t count,
  *                     */
      opal_condition_t request_cond;
      OBJ_CONSTRUCT(&request_cond,opal_condition_t);
-
+     request_cond.btl_progress_thread = ompi_request_lock.btl_progress_thread;
 
 
     rptr = requests;

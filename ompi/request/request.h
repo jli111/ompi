@@ -397,7 +397,7 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
  **/
      opal_condition_t request_cond;
      OBJ_CONSTRUCT(&request_cond,opal_condition_t);
-
+     request_cond.btl_progress_thread = ompi_request_lock.btl_progress_thread;
      /**** Request already complete ****/
      if ( !opal_atomic_cmpset_64(&req->condition,0,&request_cond)){
         opal_condition_broadcast(&request_cond);
