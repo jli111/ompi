@@ -37,7 +37,7 @@
 #include "opal/runtime/opal_cr.h"
 
 BEGIN_C_DECLS
-
+extern int btl_progress_signal_count;
 /*
  * Combine pthread support w/ polled progress to allow run-time selection
  * of threading vs. non-threading progress.
@@ -47,6 +47,7 @@ struct opal_condition_t {
     opal_object_t super;
     pthread_cond_t btl_progress_cond;
     opal_mutex_t request_lock;
+    int btl_progress_thread;
     volatile int c_waiting;
     volatile int c_signaled;
 };
@@ -79,7 +80,7 @@ static inline int opal_condition_wait(opal_condition_t *c, opal_mutex_t *m)
  	 * busy wait to reduce the cpu usage after some certain amount of time.
  	 */
 	    
-	    if(m->btl_progress_thread > 0 && elapsed_time2 - elapsed_time1 > 90){
+	    if(c->btl_progress_thread > 0 && elapsed_time2 - elapsed_time1 > 90){
 		pthread_mutex_lock(&(c->request_lock).btl_progress_lock);
 		while(btl_progress_signal_count < 0)
 			pthread_cond_wait(&c->btl_progress_cond,&c->request_lock.btl_progress_lock);
