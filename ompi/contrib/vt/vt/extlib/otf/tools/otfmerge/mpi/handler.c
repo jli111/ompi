@@ -1,1 +1,0 @@
-../../../tools/otfmerge/handler.c
