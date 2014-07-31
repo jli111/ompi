@@ -1,1 +1,0 @@
-../../util/installdirs.c
