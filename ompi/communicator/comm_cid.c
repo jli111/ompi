@@ -3,7 +3,7 @@
  * Copyright (c) 2004-2005 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2011 The University of Tennessee and The University
+ * Copyright (c) 2004-2014 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2008 High Performance Computing Center Stuttgart,
@@ -136,11 +136,142 @@ OBJ_CLASS_INSTANCE (ompi_comm_reg_t,
                     ompi_comm_reg_destructor );
 
 static opal_mutex_t ompi_cid_lock;
-static opal_list_t ompi_registered_comms;
+static opal_list_t  ompi_registered_comms;
+static ompi_op_t   *ompi_cid_redux_op = NULL;
 
+/* This variable is zero (false) if all processes in MPI_COMM_WORLD
+ * did not require MPI_THREAD_MULTIPLE support, and is 1 (true) as
+ * soon as at least one process requested support for THREAD_MULTIPLE */
+static int ompi_comm_world_thread_level_mult=0;
+typedef struct {
+    uint32_t cid;
+} cid_redux_elem_t;
+static unsigned int cid_redux_size = 4;
+static cid_redux_elem_t *cid_lCIDs = NULL, *cid_gCIDs = NULL;
+
+/** Define this will
+ *    - increase the chance of finding a low CID available
+ *    - reduce the performance of the CID finding algorithm
+ */
+#undef CID_REDUX_FN_CONSERVATIVE
+
+/**
+ * cid 0 is hard-coded to MPI_COMM_WORLD that cannot be freed.
+ * Thus, we use CID 0 to denote "unavailable CID".
+ *
+ * Input:  the first cid holds the max of the CIDs locally considered. The others are CIDs
+ *         that are locally available
+ * Output: The first cid holds the max of all considered, the others are CIDs hat
+ *         are globally available. CIDs that are not available on all ranks are simply removed.
+ */
+static void cid_redux_fn(void *_in, void *_out, int *dcount, struct ompi_datatype_t **dt)
+{
+    cid_redux_elem_t *in = (cid_redux_elem_t*)_in;
+    cid_redux_elem_t *out = (cid_redux_elem_t*)_out;
+    unsigned int i, j, m, n;
+    unsigned int count = (unsigned int)*dcount;
+
+    assert(cid_redux_size == count);
+
+#if defined(CID_REDUX_FN_CONSERVATIVE)
+    /* first CID is simply a min of the maxes. It's used to decide where to start
+     * from if a second iteration is necessary */
+    if( in[0].cid < out[0].cid )
+        out[0].cid = in[0].cid;
+#else
+    /* first CID is simply a max of the maxes. It's used to decide where to start
+     * from if a second iteration is necessary */
+    if( in[0].cid > out[0].cid )
+        out[0].cid = in[0].cid;
+#endif
+
+    if( out[1].cid == 0 ) {
+        return;
+    }
+    if( in[1].cid == 0 ) {
+        /** We already reduced to no available CID in the proposed list.
+         *  The output doesn't change.
+         */
+        for(i = 1; i < count; i++) out[i].cid = 0;
+        return;
+    }
+
+    n = count-1;
+    while( n > 0 && out[n].cid == 0 ) n--;
+    m = count-1;
+    while( m > 0 && in[m].cid == 0 ) m--;
+
+    for(j = 1; j <= n; j++) {
+        for(i = 1; i <= m; i++) {
+            if( out[j].cid == in[i].cid ) {
+                break;
+            }
+        }
+        if(i > m) {
+            out[j].cid = out[n].cid;
+            out[n].cid = 0;
+            j--;
+            n--;
+        }
+    }
+}
 
 int ompi_comm_cid_init (void)
 {
+#if OMPI_ENABLE_THREAD_MULTIPLE
+    ompi_proc_t **procs, *thisproc;
+    uint8_t thread_level;
+    uint8_t *tlpointer;
+    int ret;
+    size_t i, size, numprocs;
+
+    /** Note that the following call only returns processes
+     * with the same jobid. This is on purpose, since
+     * we switch for the dynamic communicators anyway
+     * to the original (slower) cid allocation algorithm.
+     */
+    procs = ompi_proc_world ( &numprocs );
+
+    for ( i=0; i<numprocs; i++ ) {
+        thisproc = procs[i];
+
+        OPAL_MODEX_RECV_STRING(ret, "MPI_THREAD_LEVEL", &thisproc->super, (uint8_t**)&tlpointer, &size);
+        if (OMPI_SUCCESS == ret) {
+            thread_level = *((uint8_t *) tlpointer);
+            if ( OMPI_THREADLEVEL_IS_MULTIPLE (thread_level) ) {
+                ompi_comm_world_thread_level_mult = 1;
+                break;
+            }
+        } else if (OMPI_ERR_NOT_IMPLEMENTED == ret) {
+            if (ompi_mpi_thread_multiple) {
+                ompi_comm_world_thread_level_mult = 1;
+            }
+            break;
+        } else {
+            return ret;
+        }
+    }
+    free(procs);
+#else
+    ompi_comm_world_thread_level_mult = 0; // silence compiler warning if not used
+#endif
+
+    mca_base_var_register("ompi", "mpi", NULL, "cid_redux_size",
+                          "Number of context IDs that are considered in a single allreduce for collective allocation (>=2)",
+                          MCA_BASE_VAR_TYPE_INT, NULL, 0, 
+                          MCA_BASE_VAR_FLAG_INTERNAL,
+                          OPAL_INFO_LVL_9,
+                          MCA_BASE_VAR_SCOPE_ALL_EQ,
+                          &cid_redux_size);
+    if( cid_redux_size < 2 ) 
+        cid_redux_size = 2;
+
+    /** TODO: add a ompi_comm_cid_fini to free this memory */
+    cid_lCIDs = (cid_redux_elem_t *)malloc(cid_redux_size * sizeof(cid_redux_elem_t));
+    cid_gCIDs = (cid_redux_elem_t *)malloc(cid_redux_size * sizeof(cid_redux_elem_t));
+        
+    ompi_cid_redux_op = ompi_op_create_user( 1, (ompi_op_fortran_handler_fn_t*)cid_redux_fn );
+
     return OMPI_SUCCESS;
 }
 
@@ -154,19 +285,15 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
     int ret;
     int nextcid;
     bool flag;
-    int nextlocal_cid;
     int done=0;
-    int response, glresponse=0;
     int start;
-    unsigned int i;
-    int iter=0;
+    unsigned int i, nbredux, nextcid_i;
     ompi_comm_cid_allredfct* allredfnct;
 
     /**
      * Determine which implementation of allreduce we have to use
      * for the current scenario
      */
-
     switch (mode)
         {
         case OMPI_COMM_CID_INTRA:
@@ -181,24 +308,22 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
         case OMPI_COMM_CID_INTRA_PMIX:
             allredfnct=(ompi_comm_cid_allredfct*)ompi_comm_allreduce_intra_pmix;
             break;
-        case OMPI_COMM_CID_GROUP:
-            allredfnct=(ompi_comm_cid_allredfct*)ompi_comm_allreduce_group;
-            break;
         default:
             return MPI_UNDEFINED;
             break;
         }
 
-    ret = ompi_comm_register_cid (comm->c_contextid);
-    if (OMPI_SUCCESS != ret) {
-        return ret;
-    }
+    do {
+        /* Only one communicator function allowed in same time on the
+         * same communicator.
+         */
+        OPAL_THREAD_LOCK(&ompi_cid_lock);
+        ret = ompi_comm_register_cid (comm->c_contextid);
+        OPAL_THREAD_UNLOCK(&ompi_cid_lock);
+    } while (OMPI_SUCCESS != ret );
     start = ompi_mpi_communicators.lowest_free;
 
     while (!done) {
-        /**
-         * This is the real algorithm described in the doc
-         */
         OPAL_THREAD_LOCK(&ompi_cid_lock);
         if (comm->c_contextid != ompi_comm_lowest_cid() ) {
             /* if not lowest cid, we do not continue, but sleep and try again */
@@ -207,78 +332,59 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
         }
         OPAL_THREAD_UNLOCK(&ompi_cid_lock);
 
-        nextlocal_cid = mca_pml.pml_max_contextid;
-        flag = false;
+        nbredux = 1;
         for (i=start; i < mca_pml.pml_max_contextid ; i++) {
-            flag = opal_pointer_array_test_and_set_item(&ompi_mpi_communicators,
+            flag = opal_pointer_array_test_and_set_item(&ompi_mpi_communicators, 
                                                         i, comm);
             if (true == flag) {
-                nextlocal_cid = i;
-                break;
+                cid_lCIDs[nbredux].cid = i;
+                nbredux++;
+                if( nbredux == cid_redux_size )
+                    break;
             }
         }
+        for(; nbredux < cid_redux_size; nbredux++) 
+            cid_lCIDs[nbredux].cid = 0;
+        cid_lCIDs[0].cid = i;
 
-        ret = (allredfnct)(&nextlocal_cid, &nextcid, 1, MPI_MAX, comm, bridgecomm,
-                           local_leader, remote_leader, send_first, "nextcid", iter );
-        ++iter;
+        ret = (allredfnct)((int*)cid_lCIDs, (int*)cid_gCIDs, nbredux, ompi_cid_redux_op, comm, bridgecomm,
+                           local_leader, remote_leader, send_first );
+
+        /* Take the min */
+        nextcid_i = 1;
+        for(i = 2; i < cid_redux_size; i++)
+            if( cid_gCIDs[i].cid < cid_gCIDs[nextcid_i].cid && cid_gCIDs[i].cid != 0 )
+                nextcid_i = i;
+        nextcid = cid_gCIDs[nextcid_i].cid;
+
         if( OMPI_SUCCESS != ret ) {
-            opal_pointer_array_set_item(&ompi_mpi_communicators, nextlocal_cid, NULL);
+            for(nbredux = 1; nbredux < cid_redux_size && cid_lCIDs[nbredux].cid != 0; nbredux++)
+                opal_pointer_array_set_item(&ompi_mpi_communicators, cid_lCIDs[nbredux].cid, NULL);
             goto release_and_return;
         }
 
-        if (mca_pml.pml_max_contextid == (unsigned int) nextcid) {
-            /* at least one peer ran out of CIDs */
-            if (flag) {
-                opal_pointer_array_set_item(&ompi_mpi_communicators, nextlocal_cid, NULL);
-                ret = OMPI_ERR_OUT_OF_RESOURCE;
-                goto release_and_return;
-            }
+        if (nextcid == 0) {
+            for(nbredux = 1; nbredux < cid_redux_size && cid_lCIDs[nbredux].cid != 0; nbredux++)
+                opal_pointer_array_set_item(&ompi_mpi_communicators, cid_lCIDs[nbredux].cid, NULL);
+            start = cid_gCIDs[0].cid;
+            continue;
         }
 
-        if (nextcid == nextlocal_cid) {
-            response = 1; /* fine with me */
-        }
-        else {
-            opal_pointer_array_set_item(&ompi_mpi_communicators,
-                                        nextlocal_cid, NULL);
-
-            flag = opal_pointer_array_test_and_set_item(&ompi_mpi_communicators,
-                                                        nextcid, comm );
-            if (true == flag) {
-                response = 1; /* works as well */
-            }
-            else {
-                response = 0; /* nope, not acceptable */
-            }
-        }
-
-        ret = (allredfnct)(&response, &glresponse, 1, MPI_MIN, comm, bridgecomm,
-                           local_leader, remote_leader, send_first, "nextcid", iter );
-        ++iter;
-        if( OMPI_SUCCESS != ret ) {
-            opal_pointer_array_set_item(&ompi_mpi_communicators, nextcid, NULL);
-            goto release_and_return;
-        }
-        if (1 == glresponse) {
-            done = 1;             /* we are done */
-            break;
-        }
-        else if ( 0 == glresponse ) {
-            if ( 1 == response ) {
-                /* we could use that, but other don't agree */
-                opal_pointer_array_set_item(&ompi_mpi_communicators,
-                                            nextcid, NULL);
-            }
-            start = nextcid+1; /* that's where we can start the next round */
-        }
+        for(nbredux = 1; nbredux < cid_redux_size && cid_lCIDs[nbredux].cid != 0; nbredux++)
+            if( cid_lCIDs[nbredux].cid != (uint32_t)nextcid )
+                opal_pointer_array_set_item(&ompi_mpi_communicators, cid_lCIDs[nbredux].cid, NULL);
+        done = 1;  /* we are done */
     }
 
     /* set the according values to the newcomm */
     newcomm->c_contextid = nextcid;
+    newcomm->c_f_to_c_index = newcomm->c_contextid;
     opal_pointer_array_set_item (&ompi_mpi_communicators, nextcid, newcomm);
 
  release_and_return:
+    OPAL_THREAD_LOCK(&ompi_cid_lock);
     ompi_comm_unregister_cid (comm->c_contextid);
+    OPAL_THREAD_UNLOCK(&ompi_cid_lock);
 
     return ret;
 }
@@ -1211,17 +1317,11 @@ static int ompi_comm_allreduce_intra_bridge (int *inbuf, int *outbuf,
 {
     int *tmpbuf=NULL;
     int local_rank;
-    int i;
     int rc;
     int local_leader, remote_leader;
 
     local_leader  = (*((int*)lleader));
     remote_leader = (*((int*)rleader));
-
-    if ( &ompi_mpi_op_sum.op != op && &ompi_mpi_op_prod.op != op &&
-         &ompi_mpi_op_max.op != op && &ompi_mpi_op_min.op  != op ) {
-        return MPI_ERR_OP;
-    }
 
     local_rank = ompi_comm_rank ( comm );
     tmpbuf     = (int *) malloc ( count * sizeof(int));
@@ -1257,30 +1357,7 @@ static int ompi_comm_allreduce_intra_bridge (int *inbuf, int *outbuf,
             goto exit;
         }
 
-        if ( &ompi_mpi_op_max.op == op ) {
-            for ( i = 0 ; i < count; i++ ) {
-                if (tmpbuf[i] > outbuf[i]) {
-                    outbuf[i] = tmpbuf[i];
-                }
-            }
-        }
-        else if ( &ompi_mpi_op_min.op == op ) {
-            for ( i = 0 ; i < count; i++ ) {
-                if (tmpbuf[i] < outbuf[i]) {
-                    outbuf[i] = tmpbuf[i];
-                }
-            }
-        }
-        else if ( &ompi_mpi_op_sum.op == op ) {
-            for ( i = 0 ; i < count; i++ ) {
-                outbuf[i] += tmpbuf[i];
-            }
-        }
-        else if ( &ompi_mpi_op_prod.op == op ) {
-            for ( i = 0 ; i < count; i++ ) {
-                outbuf[i] *= tmpbuf[i];
-            }
-        }
+        ompi_op_reduce( op, tmpbuf, outbuf, count, &ompi_mpi_int.dt);
     }
 
     rc = comm->c_coll.coll_bcast ( outbuf, count, MPI_INT, local_leader,
