@@ -740,12 +740,11 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided)
 
     /* If thread support was enabled, then setup OPAL to allow for
        them. */
-    if ((OMPI_ENABLE_PROGRESS_THREADS == 1) ||
+    if ((OPAL_ENABLE_PROGRESS_THREADS == 1) ||
         (*provided != MPI_THREAD_SINGLE)) {
         opal_set_using_threads(true);
     }
 
-        //opal_set_using_threads(true);
     /* start PML/BTL's */
     ret = MCA_PML_CALL(enable(true));
     if( OMPI_SUCCESS != ret ) {
