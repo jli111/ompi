@@ -165,4 +165,3 @@ static inline void opal_mutex_atomic_unlock(opal_mutex_t *m)
 
 END_C_DECLS
 
-#endif                          /* OPAL_MUTEX_UNIX_H */
