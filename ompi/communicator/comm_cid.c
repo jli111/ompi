@@ -3,7 +3,7 @@
  * Copyright (c) 2004-2005 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2014 The University of Tennessee and The University
+ * Copyright (c) 2004-2015 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2008 High Performance Computing Center Stuttgart,
@@ -153,7 +153,7 @@ static cid_redux_elem_t *cid_lCIDs = NULL, *cid_gCIDs = NULL;
  *    - increase the chance of finding a low CID available
  *    - reduce the performance of the CID finding algorithm
  */
-#undef CID_REDUX_FN_CONSERVATIVE
+static int32_t cid_redux_fn_convervative = 0;
 
 /**
  * cid 0 is hard-coded to MPI_COMM_WORLD that cannot be freed.
@@ -173,17 +173,16 @@ static void cid_redux_fn(void *_in, void *_out, int *dcount, struct ompi_datatyp
 
     assert(cid_redux_size == count);
 
-#if defined(CID_REDUX_FN_CONSERVATIVE)
-    /* first CID is simply a min of the maxes. It's used to decide where to start
-     * from if a second iteration is necessary */
-    if( in[0].cid < out[0].cid )
-        out[0].cid = in[0].cid;
-#else
-    /* first CID is simply a max of the maxes. It's used to decide where to start
-     * from if a second iteration is necessary */
-    if( in[0].cid > out[0].cid )
-        out[0].cid = in[0].cid;
-#endif
+    /* Decide where to start when a second iteration is necessary */
+    if(cid_redux_fn_convervative) {
+        /* first CID is simply a min of the maxes. */
+        if( in[0].cid < out[0].cid )
+            out[0].cid = in[0].cid;
+    } else {
+        /* first CID is simply a max of the maxes. */
+        if( in[0].cid > out[0].cid )
+            out[0].cid = in[0].cid;
+    }
 
     if( out[1].cid == 0 ) {
         return;
@@ -256,22 +255,37 @@ int ompi_comm_cid_init (void)
     ompi_comm_world_thread_level_mult = 0; // silence compiler warning if not used
 #endif
 
+    mca_base_var_register("ompi", "mpi", NULL, "cid_redux_conservative",
+                          "A more conservative algorithm for selecting the next available Cid.",
+                          MCA_BASE_VAR_TYPE_INT, NULL, 0,
+                          MCA_BASE_VAR_FLAG_INTERNAL,
+                          OPAL_INFO_LVL_9,
+                          MCA_BASE_VAR_SCOPE_ALL_EQ,
+                          &cid_redux_fn_convervative);
     mca_base_var_register("ompi", "mpi", NULL, "cid_redux_size",
                           "Number of context IDs that are considered in a single allreduce for collective allocation (>=2)",
-                          MCA_BASE_VAR_TYPE_INT, NULL, 0, 
+                          MCA_BASE_VAR_TYPE_INT, NULL, 0,
                           MCA_BASE_VAR_FLAG_INTERNAL,
                           OPAL_INFO_LVL_9,
                           MCA_BASE_VAR_SCOPE_ALL_EQ,
                           &cid_redux_size);
-    if( cid_redux_size < 2 ) 
+    if( cid_redux_size < 2 )
         cid_redux_size = 2;
 
-    /** TODO: add a ompi_comm_cid_fini to free this memory */
     cid_lCIDs = (cid_redux_elem_t *)malloc(cid_redux_size * sizeof(cid_redux_elem_t));
     cid_gCIDs = (cid_redux_elem_t *)malloc(cid_redux_size * sizeof(cid_redux_elem_t));
-        
+
     ompi_cid_redux_op = ompi_op_create_user( 1, (ompi_op_fortran_handler_fn_t*)cid_redux_fn );
 
+    return OMPI_SUCCESS;
+}
+
+int ompi_comm_cid_fini (void)
+{
+    if( NULL != cid_lCIDs ) free(cid_lCIDs);
+    cid_lCIDs = NULL;
+    if( NULL != cid_gCIDs ) free(cid_gCIDs);
+    cid_gCIDs = NULL;
     return OMPI_SUCCESS;
 }
 

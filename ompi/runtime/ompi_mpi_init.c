@@ -3,7 +3,7 @@
  * Copyright (c) 2004-2010 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2014 The University of Tennessee and The University
+ * Copyright (c) 2004-2015 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2005 High Performance Computing Center Stuttgart,
@@ -847,10 +847,9 @@ int ompi_mpi_init(int argc, char **argv, int requested, int *provided)
        e.g. hierarch, might create subcommunicators. The threadlevel
        requested by all processes is required in order to know
        which cid allocation algorithm can be used. */
-    if ( OMPI_SUCCESS !=
-	 ( ret = ompi_comm_cid_init ())) {
-	error = "ompi_mpi_init: ompi_comm_cid_init failed";
-	goto error;
+    if ( OMPI_SUCCESS != ( ret = ompi_comm_cid_init ())) {
+        error = "ompi_mpi_init: ompi_comm_cid_init failed";
+        goto error;
     }
 
     /* Init coll for the comms. This has to be after dpm_base_select,

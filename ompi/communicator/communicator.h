@@ -3,7 +3,7 @@
  * Copyright (c) 2004-2005 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2013 The University of Tennessee and The University
+ * Copyright (c) 2004-2015 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2005 High Performance Computing Center Stuttgart,
@@ -661,6 +661,7 @@ extern int ompi_comm_num_dyncomm;
    flag ompi_mpi_thread_provided
 */
 OMPI_DECLSPEC int ompi_comm_cid_init ( void );
+OMPI_DECLSPEC int ompi_comm_cid_fini ( void );
 
 
 END_C_DECLS

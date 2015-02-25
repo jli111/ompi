@@ -3,7 +3,7 @@
  * Copyright (c) 2004-2010 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2011 The University of Tennessee and The University
+ * Copyright (c) 2004-2015 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2005 High Performance Computing Center Stuttgart,
@@ -423,6 +423,11 @@ int ompi_mpi_finalize(void)
     }
     if (OMPI_SUCCESS != (ret = mca_base_framework_close(&opal_allocator_base_framework))) {
         goto done;
+    }
+
+    /* free communicator resources */
+    if ( OMPI_SUCCESS != (ret = ompi_comm_cid_fini())) {
+        return ret;
     }
 
     /* free proc resources */
