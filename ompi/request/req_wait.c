@@ -30,7 +30,6 @@
 #include "ompi/mca/pml/base/pml_base_request.h"
 
 #if OPAL_ENABLE_PROGRESS_THREADS
-static int ompi_progress_thread_count=0;
 #endif
 
 int ompi_request_default_wait(
@@ -102,7 +101,7 @@ int ompi_request_default_wait_any(
     ompi_request_t **rptr=NULL;
     ompi_request_t *request=NULL;
     int wait_needed = 0;
-#if OMPI_ENABLE_PROGRESS_THREADS
+#if OPAL_ENABLE_PROGRESS_THREADS
     /* poll for completion */
     OPAL_THREAD_ADD32(&ompi_progress_thread_count,1);
     for (c = 0; completed < 0 && c < opal_progress_spin_count; c++) {
@@ -141,7 +140,6 @@ int ompi_request_default_wait_any(
       */
     opal_condition_t request_cond;
     OBJ_CONSTRUCT(&request_cond,opal_condition_t);
-    request_cond.btl_progress_thread = ompi_request_lock.btl_progress_thread;
 
     OPAL_THREAD_LOCK(&request_cond.request_lock);
     ompi_request_waiting++;
@@ -152,7 +150,7 @@ int ompi_request_default_wait_any(
             request = *rptr;
 
             /**** Request already complete ****/
-            if( !opal_atomic_cmpset_64(&request->condition,0,&request_cond)){
+            if( !opal_atomic_cmpset_64(&request->condition,(void*)0L,&request_cond)){
             // Request already completed from OMPI level.
             // Mark this newly created condition as completed.
             }else wait_needed = 1;	
@@ -256,7 +254,6 @@ int ompi_request_default_wait_all( size_t count,
  */
      opal_condition_t request_cond;
      OBJ_CONSTRUCT(&request_cond,opal_condition_t);
-     request_cond.btl_progress_thread = ompi_request_lock.btl_progress_thread;
 
 
     rptr = requests;
@@ -264,7 +261,7 @@ int ompi_request_default_wait_all( size_t count,
         request = *rptr++;
 
      /**** Request already complete ****/
-     if( !opal_atomic_cmpset_64(&request->condition,0,&request_cond)){
+     if( !opal_atomic_cmpset_64(&request->condition,(void*)0L,&request_cond)){
 	// Request already completed from OMPI level.
 	// Mark this newly created condition as completed.
      }else wait_needed = 1;	
@@ -548,7 +545,6 @@ int ompi_request_default_wait_some(
       */
     opal_condition_t request_cond;
     OBJ_CONSTRUCT(&request_cond,opal_condition_t);
-    request_cond.btl_progress_thread = ompi_request_lock.btl_progress_thread;
 
     OPAL_THREAD_LOCK(&request_cond.request_lock);
     if(!wait_needed) opal_condition_broadcast(&request_cond);
@@ -562,7 +558,7 @@ int ompi_request_default_wait_some(
             request = *rptr;
             
             /**** Request already complete ****/
-            if( !opal_atomic_cmpset_64(&request->condition,0,&request_cond)){
+            if( !opal_atomic_cmpset_64(&request->condition,(void*)0L,&request_cond)){
             // Request already completed from OMPI level.
             // Mark this newly created condition as completed.
             }else wait_needed = 1;	

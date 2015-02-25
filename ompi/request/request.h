@@ -332,7 +332,6 @@ OMPI_DECLSPEC extern size_t                ompi_request_completed;
 OMPI_DECLSPEC extern size_t                ompi_request_failed;
 OMPI_DECLSPEC extern int32_t               ompi_request_poll;
 OMPI_DECLSPEC extern opal_mutex_t          ompi_request_lock;
-OMPI_DECLSPEC extern int		   arm_global;
 OMPI_DECLSPEC extern opal_condition_t      ompi_request_cond;
 OMPI_DECLSPEC extern ompi_predefined_request_t        ompi_request_null;
 OMPI_DECLSPEC extern ompi_predefined_request_t        *ompi_request_null_addr;
@@ -400,7 +399,6 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
  **/
      opal_condition_t request_cond;
      OBJ_CONSTRUCT(&request_cond,opal_condition_t);
-     request_cond.btl_progress_thread = ompi_request_lock.btl_progress_thread;
      /**** Request already complete ****/
      if ( !opal_atomic_cmpset_64(&req->condition,0,&request_cond)){
         opal_condition_broadcast(&request_cond);
@@ -452,9 +450,7 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
 	else if(request->condition != 1){
 		// Someone is waiting on this condition, we broadcast the condition
 		// to release it from the wait.
-        	pthread_mutex_lock(&((*request->condition).request_lock.btl_progress_lock));
         	opal_condition_broadcast(request->condition);
-		pthread_mutex_unlock(&((*request->condition).request_lock.btl_progress_lock));
 	}
     }
     return OMPI_SUCCESS;

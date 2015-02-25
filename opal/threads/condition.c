@@ -19,16 +19,12 @@
 #include "opal_config.h"
 #include <time.h>
 #include "opal/threads/condition.h"
-int btl_progress_signal_count=0;
 
 static void opal_condition_construct(opal_condition_t *c)
 {
     c->c_waiting = 0;
     c->c_signaled = 0;
-    c->btl_progress_thread = -1;
-    pthread_cond_init(&c->btl_progress_cond,NULL);
     OBJ_CONSTRUCT(&c->request_lock, opal_mutex_t);
-    pthread_cond_init(&c->request_lock.btl_progress_lock,NULL);
 }
 
 

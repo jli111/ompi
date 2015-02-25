@@ -37,7 +37,6 @@
 #include "opal/runtime/opal_cr.h"
 #include "opal/mca/timer/base/base.h"
 
-extern int btl_progress_signal_count;
 BEGIN_C_DECLS
 /*
  * Combine pthread support w/ polled progress to allow run-time selection
@@ -46,9 +45,7 @@ BEGIN_C_DECLS
 
 struct opal_condition_t {
     opal_object_t super;
-    pthread_cond_t btl_progress_cond;
     opal_mutex_t request_lock;
-    int btl_progress_thread;
     volatile int c_waiting;
     volatile int c_signaled;
 };
@@ -136,15 +133,12 @@ static inline int opal_condition_signal(opal_condition_t *c)
     if (c->c_waiting) {
         c->c_signaled++;
     }
-    pthread_cond_signal(&c->btl_progress_cond);
     return 0;
 }
 
 static inline int opal_condition_broadcast(opal_condition_t *c)
 {
     c->c_signaled = c->c_waiting;
-    pthread_cond_signal(&c->btl_progress_cond);
-    btl_progress_signal_count++;
     return 0;
 }
 
