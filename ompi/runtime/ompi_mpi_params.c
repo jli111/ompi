@@ -292,8 +292,7 @@ int ompi_mpi_register_params(void)
                           &ompi_mpi_cid_redux_fn_convervative);
     mca_base_var_register("ompi", "mpi", NULL, "cid_redux_size",
                           "Number of context IDs that are considered in a single allreduce for collective allocation (>0)",
-                          MCA_BASE_VAR_TYPE_INT, NULL, 0,
-                          MCA_BASE_VAR_FLAG_INTERNAL,
+                          MCA_BASE_VAR_TYPE_INT, NULL, 0, 0,
                           OPAL_INFO_LVL_9,
                           MCA_BASE_VAR_SCOPE_ALL_EQ,
                           &ompi_mpi_cid_redux_size);
