@@ -42,7 +42,7 @@
 #include "ompi/mca/rte/rte.h"
 #include "ompi/mca/coll/base/base.h"
 #include "ompi/request/request.h"
-#include "ompi/runtime/mpiruntime.h"
+#include "ompi/runtime/params.h"
 
 BEGIN_C_DECLS
 
@@ -146,14 +146,7 @@ static int ompi_comm_world_thread_level_mult=0;
 typedef struct {
     uint32_t cid;
 } cid_redux_elem_t;
-static unsigned int cid_redux_size = 4;
 static cid_redux_elem_t *cid_lCIDs = NULL, *cid_gCIDs = NULL;
-
-/** Define this will
- *    - increase the chance of finding a low CID available
- *    - reduce the performance of the CID finding algorithm
- */
-static int32_t cid_redux_fn_convervative = 0;
 
 /**
  * cid 0 is hard-coded to MPI_COMM_WORLD that cannot be freed.
@@ -171,10 +164,10 @@ static void cid_redux_fn(void *_in, void *_out, int *dcount, struct ompi_datatyp
     unsigned int i, j, m, n;
     unsigned int count = (unsigned int)*dcount;
 
-    assert(cid_redux_size == count);
+    assert(ompi_mpi_cid_redux_size == count);
 
     /* Decide where to start when a second iteration is necessary */
-    if(cid_redux_fn_convervative) {
+    if(ompi_mpi_cid_redux_fn_convervative) {
         /* first CID is simply a min of the maxes. */
         if( in[0].cid < out[0].cid )
             out[0].cid = in[0].cid;
@@ -255,25 +248,8 @@ int ompi_comm_cid_init (void)
     ompi_comm_world_thread_level_mult = 0; // silence compiler warning if not used
 #endif
 
-    mca_base_var_register("ompi", "mpi", NULL, "cid_redux_conservative",
-                          "A more conservative algorithm for selecting the next available Cid.",
-                          MCA_BASE_VAR_TYPE_INT, NULL, 0,
-                          MCA_BASE_VAR_FLAG_INTERNAL,
-                          OPAL_INFO_LVL_9,
-                          MCA_BASE_VAR_SCOPE_ALL_EQ,
-                          &cid_redux_fn_convervative);
-    mca_base_var_register("ompi", "mpi", NULL, "cid_redux_size",
-                          "Number of context IDs that are considered in a single allreduce for collective allocation (>=2)",
-                          MCA_BASE_VAR_TYPE_INT, NULL, 0,
-                          MCA_BASE_VAR_FLAG_INTERNAL,
-                          OPAL_INFO_LVL_9,
-                          MCA_BASE_VAR_SCOPE_ALL_EQ,
-                          &cid_redux_size);
-    if( cid_redux_size < 2 )
-        cid_redux_size = 2;
-
-    cid_lCIDs = (cid_redux_elem_t *)malloc(cid_redux_size * sizeof(cid_redux_elem_t));
-    cid_gCIDs = (cid_redux_elem_t *)malloc(cid_redux_size * sizeof(cid_redux_elem_t));
+    cid_lCIDs = (cid_redux_elem_t *)malloc(ompi_mpi_cid_redux_size * sizeof(cid_redux_elem_t));
+    cid_gCIDs = (cid_redux_elem_t *)malloc(ompi_mpi_cid_redux_size * sizeof(cid_redux_elem_t));
 
     ompi_cid_redux_op = ompi_op_create_user( 1, (ompi_op_fortran_handler_fn_t*)cid_redux_fn );
 
@@ -353,11 +329,11 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
             if (true == flag) {
                 cid_lCIDs[nbredux].cid = i;
                 nbredux++;
-                if( nbredux == cid_redux_size )
+                if( nbredux == ompi_mpi_cid_redux_size )
                     break;
             }
         }
-        for(; nbredux < cid_redux_size; nbredux++) 
+        for(; nbredux < ompi_mpi_cid_redux_size; nbredux++) 
             cid_lCIDs[nbredux].cid = 0;
         cid_lCIDs[0].cid = i;
 
@@ -366,25 +342,25 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
 
         /* Take the min */
         nextcid_i = 1;
-        for(i = 2; i < cid_redux_size; i++)
+        for(i = 2; i < ompi_mpi_cid_redux_size; i++)
             if( cid_gCIDs[i].cid < cid_gCIDs[nextcid_i].cid && cid_gCIDs[i].cid != 0 )
                 nextcid_i = i;
         nextcid = cid_gCIDs[nextcid_i].cid;
 
         if( OMPI_SUCCESS != ret ) {
-            for(nbredux = 1; nbredux < cid_redux_size && cid_lCIDs[nbredux].cid != 0; nbredux++)
+            for(nbredux = 1; nbredux < ompi_mpi_cid_redux_size && cid_lCIDs[nbredux].cid != 0; nbredux++)
                 opal_pointer_array_set_item(&ompi_mpi_communicators, cid_lCIDs[nbredux].cid, NULL);
             goto release_and_return;
         }
 
         if (nextcid == 0) {
-            for(nbredux = 1; nbredux < cid_redux_size && cid_lCIDs[nbredux].cid != 0; nbredux++)
+            for(nbredux = 1; nbredux < ompi_mpi_cid_redux_size && cid_lCIDs[nbredux].cid != 0; nbredux++)
                 opal_pointer_array_set_item(&ompi_mpi_communicators, cid_lCIDs[nbredux].cid, NULL);
             start = cid_gCIDs[0].cid;
             continue;
         }
 
-        for(nbredux = 1; nbredux < cid_redux_size && cid_lCIDs[nbredux].cid != 0; nbredux++)
+        for(nbredux = 1; nbredux < ompi_mpi_cid_redux_size && cid_lCIDs[nbredux].cid != 0; nbredux++)
             if( cid_lCIDs[nbredux].cid != (uint32_t)nextcid )
                 opal_pointer_array_set_item(&ompi_mpi_communicators, cid_lCIDs[nbredux].cid, NULL);
         done = 1;  /* we are done */

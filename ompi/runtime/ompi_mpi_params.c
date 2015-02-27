@@ -3,7 +3,7 @@
  * Copyright (c) 2004-2005 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2006 The University of Tennessee and The University
+ * Copyright (c) 2004-2015 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2005 High Performance Computing Center Stuttgart,
@@ -56,7 +56,6 @@ char *ompi_mpi_show_mca_params_file = NULL;
 bool ompi_mpi_abort_print_stack = false;
 int ompi_mpi_abort_delay = 0;
 bool ompi_mpi_keep_fqdn_hostnames = false;
-bool ompi_have_sparse_group_storage = OPAL_INT_TO_BOOL(OMPI_GROUP_SPARSE);
 bool ompi_use_sparse_group_storage = OPAL_INT_TO_BOOL(OMPI_GROUP_SPARSE);
 
 bool ompi_mpi_yield_when_idle = true;
@@ -66,6 +65,10 @@ bool ompi_mpi_have_sparse_group_storage = !!(OMPI_GROUP_SPARSE);
 bool ompi_mpi_preconnect_mpi = false;
 uint32_t ompi_add_procs_cutoff = 1024;
 bool ompi_mpi_dynamics_enabled = true;
+
+/* Communicator CID parameters */
+bool ompi_mpi_cid_redux_fn_convervative = false;
+uint32_t ompi_mpi_cid_redux_size = 4;
 
 static bool show_default_mca_params = false;
 static bool show_file_mca_params = false;
@@ -278,6 +281,26 @@ int ompi_mpi_register_params(void)
         mca_base_var_register_synonym(value, "ompi", "mpi", NULL, "cuda_support",
                                       MCA_BASE_VAR_SYN_FLAG_DEPRECATED);
     }
+
+    /* Communicator CID allocation */
+    mca_base_var_register("ompi", "mpi", NULL, "cid_redux_conservative",
+                          "A more conservative algorithm for selecting the next available cid.",
+                          MCA_BASE_VAR_TYPE_BOOL, NULL, 0,
+                          MCA_BASE_VAR_FLAG_INTERNAL,
+                          OPAL_INFO_LVL_9,
+                          MCA_BASE_VAR_SCOPE_ALL_EQ,
+                          &ompi_mpi_cid_redux_fn_convervative);
+    mca_base_var_register("ompi", "mpi", NULL, "cid_redux_size",
+                          "Number of context IDs that are considered in a single allreduce for collective allocation (>0)",
+                          MCA_BASE_VAR_TYPE_INT, NULL, 0,
+                          MCA_BASE_VAR_FLAG_INTERNAL,
+                          OPAL_INFO_LVL_9,
+                          MCA_BASE_VAR_SCOPE_ALL_EQ,
+                          &ompi_mpi_cid_redux_size);
+    if( ompi_mpi_cid_redux_size <= 0 )
+        ompi_mpi_cid_redux_size = 1;
+    ompi_mpi_cid_redux_size++;  /* the extra element for the reduction operation */
+
 
     value = mca_base_var_find ("opal", "opal", NULL, "built_with_cuda_support");
     if (0 <= value) {

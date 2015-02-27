@@ -3,7 +3,7 @@
  * Copyright (c) 2004-2005 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2005 The University of Tennessee and The University
+ * Copyright (c) 2004-2015 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2005 High Performance Computing Center Stuttgart,
@@ -115,11 +115,6 @@ OMPI_DECLSPEC extern bool ompi_mpi_abort_print_stack;
 OMPI_DECLSPEC extern int ompi_mpi_abort_delay;
 
 /**
- * Whether sparse MPI group storage formats are supported or not.
- */
-OMPI_DECLSPEC extern bool ompi_have_sparse_group_storage;
-
-/**
  * Whether sparse MPI group storage formats should be used or not.
  */
 OMPI_DECLSPEC extern bool ompi_use_sparse_group_storage;
@@ -139,6 +134,20 @@ OMPI_DECLSPEC extern uint32_t ompi_add_procs_cutoff;
  * functionality or not
  */
 OMPI_DECLSPEC extern bool ompi_mpi_dynamics_enabled;
+
+/**
+ * Set this parameter to 1 will:
+ *    - increase the chance of finding a low CID available
+ *    - reduce the performance of the CID finding algorithm
+ */
+OMPI_DECLSPEC extern bool ompi_mpi_cid_redux_fn_convervative;
+
+/**
+ * The number of communicators ID we are reducing in a single operation.
+ * Increasing this value might improve the perfomance of all communicator
+ * creation functions.
+ */
+OMPI_DECLSPEC extern uint32_t ompi_mpi_cid_redux_size;
 
 /**
  * Register MCA parameters used by the MPI layer.
