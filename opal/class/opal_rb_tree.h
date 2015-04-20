@@ -130,6 +130,19 @@ OPAL_DECLSPEC int opal_rb_tree_init(opal_rb_tree_t * tree, opal_rb_tree_comp_fn_
 OPAL_DECLSPEC int opal_rb_tree_insert(opal_rb_tree_t *tree, void * key, void * value);
 
 /**
+ * inserts a node into the tree, if its key is not present yet
+ *
+ * @param tree a pointe to the tree data structure
+ * @param key the key for the node
+ * @param value the value for the node
+ *
+ * @retval OPAL_SUCCESS if the node was inserted
+ * @retval OPAL_EXISTS  if the node was already present
+ * @retval OPAL_ERR_TEMP_OUT_OF_RESOURCE if unsuccessful
+ */
+OPAL_DECLSPEC int opal_rb_tree_test_and_insert(opal_rb_tree_t *tree, void * key, void * value);
+
+/**
   * finds a value in the tree based on the passed key using passed
   * compare function
   *
@@ -154,6 +167,34 @@ OPAL_DECLSPEC void * opal_rb_tree_find_with(opal_rb_tree_t *tree, void *key, opa
 static inline void * opal_rb_tree_find(opal_rb_tree_t *tree, void *key)
 {
     return opal_rb_tree_find_with(tree, key, tree->comp);
+}
+
+/**
+ * updates the value of an existing node in the tree based on the passed key
+ *
+ * @param tree a pointer to the tree data structure
+ * @param key a pointer to the key
+ * @param value the new value
+ * @param compare function
+ *
+ * @retval OMPI_SUCCESS if found and updated
+ * @retval OPAL_ERR_NOT_FOUND if the element was not in the tree
+ */
+OPAL_DECLSPEC int opal_rb_tree_update_with(opal_rb_tree_t *tree, void *key, void *value, opal_rb_tree_comp_fn_t compfn);
+
+/**
+  * updates the value of an existing node in the tree based on the passed key
+  *
+  * @param tree a pointer to the tree data structure
+  * @param key a pointer to the key
+  * @param value the new value
+  *
+  * @retval pointer to the value if found
+  * @retval NULL if not found
+  */
+static inline int opal_rb_tree_update(opal_rb_tree_t *tree, void *key, void *value)
+{
+    return opal_rb_tree_update_with(tree, key, value, tree->comp);
 }
 
 /**
@@ -199,6 +240,18 @@ OPAL_DECLSPEC int opal_rb_tree_traverse(opal_rb_tree_t *tree,
   * @retval int the nuber of items on the tree
   */
 OPAL_DECLSPEC int opal_rb_tree_size(opal_rb_tree_t *tree);
+
+/**
+ * returns the highest key in the tree
+ *
+ * @param tree a pointer to the tree data structure
+ *
+ * @retval void * the point to the highest key in the tree
+ * @retval NULL   if the tree is empty (check with 
+ *                opal_rb_tree_size before calling to differenciate
+ *                an empty tree from a tree with highest key NULL
+ */
+OPAL_DECLSPEC void *opal_rb_tree_highest_key(opal_rb_tree_t *tree);
 
 END_C_DECLS
 #endif /* OPAL_RB_TREE_H */

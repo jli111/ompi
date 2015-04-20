@@ -36,7 +36,7 @@
 #include "ompi/communicator/communicator.h"
 #include "ompi/op/op.h"
 #include "ompi/constants.h"
-#include "opal/class/opal_pointer_array.h"
+#include "opal/class/opal_rb_tree.h"
 #include "opal/class/opal_list.h"
 #include "ompi/mca/pml/pml.h"
 #include "ompi/mca/rte/rte.h"
@@ -193,7 +193,7 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
     if (OMPI_SUCCESS != ret) {
         return ret;
     }
-    start = ompi_mpi_communicators.lowest_free;
+    start = (int)(intptr_t)opal_rb_tree_highest_key(&ompi_mpi_communicators);
 
     while (!done) {
         /**
@@ -210,9 +210,7 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
         nextlocal_cid = mca_pml.pml_max_contextid;
         flag = false;
         for (i=start; i < mca_pml.pml_max_contextid ; i++) {
-            flag = opal_pointer_array_test_and_set_item(&ompi_mpi_communicators,
-                                                        i, comm);
-            if (true == flag) {
+            if( opal_rb_tree_test_and_insert(&ompi_mpi_communicators, (void*)(intptr_t)i, comm) == OPAL_SUCCESS ) {
                 nextlocal_cid = i;
                 break;
             }
@@ -222,14 +220,14 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
                            local_leader, remote_leader, send_first, "nextcid", iter );
         ++iter;
         if( OMPI_SUCCESS != ret ) {
-            opal_pointer_array_set_item(&ompi_mpi_communicators, nextlocal_cid, NULL);
+            opal_rb_tree_delete(&ompi_mpi_communicators, (void*)(intptr_t)nextlocal_cid);
             goto release_and_return;
         }
 
         if (mca_pml.pml_max_contextid == (unsigned int) nextcid) {
             /* at least one peer ran out of CIDs */
             if (flag) {
-                opal_pointer_array_set_item(&ompi_mpi_communicators, nextlocal_cid, NULL);
+                opal_rb_tree_delete(&ompi_mpi_communicators, (void*)(intptr_t)nextlocal_cid);
                 ret = OMPI_ERR_OUT_OF_RESOURCE;
                 goto release_and_return;
             }
@@ -239,12 +237,8 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
             response = 1; /* fine with me */
         }
         else {
-            opal_pointer_array_set_item(&ompi_mpi_communicators,
-                                        nextlocal_cid, NULL);
-
-            flag = opal_pointer_array_test_and_set_item(&ompi_mpi_communicators,
-                                                        nextcid, comm );
-            if (true == flag) {
+            opal_rb_tree_delete(&ompi_mpi_communicators, (void*)(intptr_t)nextlocal_cid);
+            if( opal_rb_tree_test_and_insert(&ompi_mpi_communicators, (void*)(intptr_t)nextcid, comm) == OPAL_SUCCESS ) {
                 response = 1; /* works as well */
             }
             else {
@@ -256,7 +250,7 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
                            local_leader, remote_leader, send_first, "nextcid", iter );
         ++iter;
         if( OMPI_SUCCESS != ret ) {
-            opal_pointer_array_set_item(&ompi_mpi_communicators, nextcid, NULL);
+            opal_rb_tree_delete(&ompi_mpi_communicators, (void*)(intptr_t)nextcid);
             goto release_and_return;
         }
         if (1 == glresponse) {
@@ -266,8 +260,7 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
         else if ( 0 == glresponse ) {
             if ( 1 == response ) {
                 /* we could use that, but other don't agree */
-                opal_pointer_array_set_item(&ompi_mpi_communicators,
-                                            nextcid, NULL);
+                opal_rb_tree_delete(&ompi_mpi_communicators, (void*)(intptr_t)nextcid);
             }
             start = nextcid+1; /* that's where we can start the next round */
         }
@@ -275,7 +268,7 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
 
     /* set the according values to the newcomm */
     newcomm->c_contextid = nextcid;
-    opal_pointer_array_set_item (&ompi_mpi_communicators, nextcid, newcomm);
+    opal_rb_tree_update(&ompi_mpi_communicators, (void*)(intptr_t)nextcid, newcomm);
 
  release_and_return:
     ompi_comm_unregister_cid (comm->c_contextid);
@@ -341,7 +334,7 @@ int ompi_comm_nextcid_nb (ompi_communicator_t* newcomm,
     context->comm          = comm;
     context->bridgecomm    = bridgecomm;
     context->mode          = mode;
-    context->start         = ompi_mpi_communicators.lowest_free;
+    context->start         = (int)(intptr_t)opal_rb_tree_highest_key(&ompi_mpi_communicators);
 
     request->context = context;
 
@@ -377,10 +370,9 @@ static int ompi_comm_allreduce_getnextcid (ompi_comm_request_t *request)
     flag = false;
     context->nextlocal_cid = mca_pml.pml_max_contextid;
     for (i = context->start ; i < mca_pml.pml_max_contextid ; ++i) {
-        flag = opal_pointer_array_test_and_set_item(&ompi_mpi_communicators,
-                                                    i, context->comm);
-        if (true == flag) {
+        if (opal_rb_tree_test_and_insert(&ompi_mpi_communicators, (void*)(intptr_t)i, context->comm) == OPAL_SUCCESS) {
             context->nextlocal_cid = i;
+            flag = true;
             break;
         }
     }
@@ -400,7 +392,7 @@ static int ompi_comm_allreduce_getnextcid (ompi_comm_request_t *request)
     if ((unsigned int) context->nextlocal_cid == mca_pml.pml_max_contextid) {
         /* at least one peer ran out of CIDs */
         if (flag) {
-            opal_pointer_array_test_and_set_item(&ompi_mpi_communicators, context->nextlocal_cid, NULL);
+            opal_rb_tree_delete(&ompi_mpi_communicators, (void*)(intptr_t)context->nextlocal_cid);
         }
 
         return OMPI_ERR_OUT_OF_RESOURCE;
@@ -421,10 +413,11 @@ static int ompi_comm_checkcid (ompi_comm_request_t *request)
     context->flag = (context->nextcid == context->nextlocal_cid);
 
     if (!context->flag) {
-        opal_pointer_array_set_item(&ompi_mpi_communicators, context->nextlocal_cid, NULL);
+        opal_rb_tree_delete(&ompi_mpi_communicators, (void*)(intptr_t)context->nextlocal_cid);
 
-        context->flag = opal_pointer_array_test_and_set_item(&ompi_mpi_communicators,
-                                                             context->nextcid, context->comm);
+        context->flag = (opal_rb_tree_test_and_insert(&ompi_mpi_communicators, 
+                                                      (void*)(intptr_t)context->nextcid, 
+                                                      context->comm) == OPAL_SUCCESS);
     }
 
     if (context->mode == OMPI_COMM_CID_INTRA) {
@@ -451,7 +444,7 @@ static int ompi_comm_nextcid_check_flag (ompi_comm_request_t *request)
     if (1 == context->rflag) {
         /* set the according values to the newcomm */
         context->newcomm->c_contextid = context->nextcid;
-        opal_pointer_array_set_item (&ompi_mpi_communicators, context->nextcid, context->newcomm);
+        opal_rb_tree_insert(&ompi_mpi_communicators, (void*)(intptr_t)context->nextcid, context->newcomm);
 
         ompi_comm_unregister_cid (context->comm->c_contextid);
 
@@ -461,7 +454,7 @@ static int ompi_comm_nextcid_check_flag (ompi_comm_request_t *request)
 
     if (1 == context->flag) {
         /* we could use this cid, but other don't agree */
-        opal_pointer_array_set_item(&ompi_mpi_communicators, context->nextcid, NULL);
+        opal_rb_tree_delete(&ompi_mpi_communicators, (void*)(intptr_t)context->nextcid);
         context->start = context->nextcid + 1; /* that's where we can start the next round */
     }
 

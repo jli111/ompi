@@ -1548,7 +1548,7 @@ int ompi_comm_free( ompi_communicator_t **comm )
          * makes sure that the pointer to the dependent communicator
          * still contains a valid object.
          */
-        ompi_communicator_t *tmpcomm = (ompi_communicator_t *) opal_pointer_array_get_item(&ompi_mpi_communicators, cid);
+        ompi_communicator_t *tmpcomm = (ompi_communicator_t *) opal_rb_tree_find(&ompi_mpi_communicators, (void*)(intptr_t)cid);
         if ( NULL != tmpcomm ){
             ompi_comm_free(&tmpcomm);
         }

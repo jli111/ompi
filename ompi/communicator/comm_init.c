@@ -49,7 +49,7 @@
 ** on cid.
 **
 */
-opal_pointer_array_t ompi_mpi_communicators = {{0}};
+opal_rb_tree_t ompi_mpi_communicators = {{0}};
 opal_pointer_array_t ompi_comm_f_to_c_table = {{0}};
 
 ompi_predefined_communicator_t  ompi_mpi_comm_world = {{{0}}};
@@ -85,9 +85,8 @@ int ompi_comm_init(void)
     size_t size;
 
     /* Setup communicator array */
-    OBJ_CONSTRUCT(&ompi_mpi_communicators, opal_pointer_array_t);
-    if( OPAL_SUCCESS != opal_pointer_array_init(&ompi_mpi_communicators, 0,
-                                                OMPI_FORTRAN_HANDLE_MAX, 64) ) {
+    OBJ_CONSTRUCT(&ompi_mpi_communicators, opal_rb_tree_t); 
+    if( OPAL_SUCCESS != opal_rb_tree_init(&ompi_mpi_communicators, ompi_mpi_communicators_cmp_fn) ) {
         return OMPI_ERROR;
     }
 
@@ -134,7 +133,7 @@ int ompi_comm_init(void)
     ompi_mpi_comm_world.comm.error_handler  = &ompi_mpi_errors_are_fatal.eh;
     OBJ_RETAIN( &ompi_mpi_errors_are_fatal.eh );
     OMPI_COMM_SET_PML_ADDED(&ompi_mpi_comm_world.comm);
-    opal_pointer_array_set_item (&ompi_mpi_communicators, 0, &ompi_mpi_comm_world);
+    opal_rb_tree_insert (&ompi_mpi_communicators, (void*)0, &ompi_mpi_comm_world);
 
     MEMCHECKER (memset (ompi_mpi_comm_world.comm.c_name, 0, MPI_MAX_OBJECT_NAME));
     strncpy (ompi_mpi_comm_world.comm.c_name, "MPI_COMM_WORLD",
@@ -168,7 +167,7 @@ int ompi_comm_init(void)
     ompi_mpi_comm_self.comm.error_handler  = &ompi_mpi_errors_are_fatal.eh;
     OBJ_RETAIN( &ompi_mpi_errors_are_fatal.eh );
     OMPI_COMM_SET_PML_ADDED(&ompi_mpi_comm_self.comm);
-    opal_pointer_array_set_item (&ompi_mpi_communicators, 1, &ompi_mpi_comm_self);
+    opal_rb_tree_insert (&ompi_mpi_communicators, (void*)1, &ompi_mpi_comm_self);
 
     MEMCHECKER (memset (ompi_mpi_comm_self.comm.c_name, 0, MPI_MAX_OBJECT_NAME));
     strncpy(ompi_mpi_comm_self.comm.c_name,"MPI_COMM_SELF",strlen("MPI_COMM_SELF")+1);
@@ -193,7 +192,7 @@ int ompi_comm_init(void)
 
     ompi_mpi_comm_null.comm.error_handler  = &ompi_mpi_errors_are_fatal.eh;
     OBJ_RETAIN( &ompi_mpi_errors_are_fatal.eh );
-    opal_pointer_array_set_item (&ompi_mpi_communicators, 2, &ompi_mpi_comm_null);
+    opal_rb_tree_insert (&ompi_mpi_communicators, (void*)2, &ompi_mpi_comm_null);
 
     MEMCHECKER (memset (ompi_mpi_comm_null.comm.c_name, 0, MPI_MAX_OBJECT_NAME));
     strncpy(ompi_mpi_comm_null.comm.c_name,"MPI_COMM_NULL",strlen("MPI_COMM_NULL")+1);
@@ -242,11 +241,39 @@ ompi_communicator_t *ompi_comm_allocate ( int local_size, int remote_size )
     return new_comm;
 }
 
-int ompi_comm_finalize(void)
+static int ompi_mpi_communicators_not_default_condition(void *value)
 {
-    int max, i;
-    ompi_communicator_t *comm;
+    ompi_communicator_t *comm = (ompi_communicator_t*)value;
+    return (comm != &ompi_mpi_comm_world.comm) && (comm != &ompi_mpi_comm_self.comm) && (comm != &ompi_mpi_comm_null.comm);
+}
 
+static void ompi_mpi_communicators_show_leak_action(void *key, void *value)
+{
+    ompi_communicator_t *comm = (ompi_communicator_t*)value;
+    if ( NULL != comm ) {
+        /* Still here ? */
+        if ( !OMPI_COMM_IS_EXTRA_RETAIN(comm)) {
+
+            /* For communicator that have been marked as "extra retain", we do not further
+             * enforce to decrease the reference counter once more. These "extra retain"
+             * communicators created e.g. by the hierarch or inter module did increase
+             * the reference count by one more than other communicators, on order to
+             * allow for deallocation with the parent communicator. Note, that
+             * this only occurs if the cid of the local_comm is lower than of its
+             * parent communicator. Read the comment in comm_activate for
+             * a full explanation.
+             */
+            if ( ompi_debug_show_handle_leaks && !(OMPI_COMM_IS_FREED(comm)) ){
+                opal_output(0,"WARNING: MPI_Comm still allocated in MPI_Finalize\n");
+                ompi_comm_dump ( comm);
+                OBJ_RELEASE(comm);
+            }
+        }
+    }
+}
+
+int ompi_comm_finalize(void) 
+{
     /* Shut down MPI_COMM_SELF */
     OBJ_DESTRUCT( &ompi_mpi_comm_self );
 
@@ -298,35 +325,9 @@ int ompi_comm_finalize(void)
     OBJ_DESTRUCT( &ompi_mpi_comm_null );
 
     /* Check whether we have some communicators left */
-    max = opal_pointer_array_get_size(&ompi_mpi_communicators);
-    for ( i=3; i<max; i++ ) {
-        comm = (ompi_communicator_t *)opal_pointer_array_get_item(&ompi_mpi_communicators, i);
-        if ( NULL != comm ) {
-            /* Communicator has not been freed before finalize */
-            OBJ_RELEASE(comm);
-            comm=(ompi_communicator_t *)opal_pointer_array_get_item(&ompi_mpi_communicators, i);
-            if ( NULL != comm ) {
-                /* Still here ? */
-                if ( !OMPI_COMM_IS_EXTRA_RETAIN(comm)) {
-
-                    /* For communicator that have been marked as "extra retain", we do not further
-                     * enforce to decrease the reference counter once more. These "extra retain"
-                     * communicators created e.g. by the hierarch or inter module did increase
-                     * the reference count by one more than other communicators, on order to
-                     * allow for deallocation with the parent communicator. Note, that
-                     * this only occurs if the cid of the local_comm is lower than of its
-                     * parent communicator. Read the comment in comm_activate for
-                     * a full explanation.
-                     */
-                    if ( ompi_debug_show_handle_leaks && !(OMPI_COMM_IS_FREED(comm)) ){
-                        opal_output(0,"WARNING: MPI_Comm still allocated in MPI_Finalize\n");
-                        ompi_comm_dump ( comm);
-                        OBJ_RELEASE(comm);
-                    }
-                }
-            }
-        }
-    }
+    opal_rb_tree_traverse(&ompi_mpi_communicators,
+                          ompi_mpi_communicators_not_default_condition,
+                          ompi_mpi_communicators_show_leak_action);
 
 
     OBJ_DESTRUCT (&ompi_mpi_communicators);
@@ -449,11 +450,8 @@ static void ompi_comm_destruct(ompi_communicator_t* comm)
     }
 
     /* mark this cid as available */
-    if ( MPI_UNDEFINED != (int)comm->c_contextid &&
-         NULL != opal_pointer_array_get_item(&ompi_mpi_communicators,
-                                             comm->c_contextid)) {
-        opal_pointer_array_set_item ( &ompi_mpi_communicators,
-                                      comm->c_contextid, NULL);
+    if ( MPI_UNDEFINED != (int)comm->c_contextid ) {
+        opal_rb_tree_delete(&ompi_mpi_communicators, (void*)(intptr_t)comm->c_contextid);
     }
 
     /* reset the ompi_comm_f_to_c_table entry */

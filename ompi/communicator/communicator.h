@@ -32,6 +32,7 @@
 
 #include "ompi_config.h"
 #include "opal/class/opal_object.h"
+#include "opal/class/opal_rb_tree.h"
 #include "ompi/errhandler/errhandler.h"
 #include "opal/threads/mutex.h"
 #include "ompi/communicator/comm_request.h"
@@ -111,7 +112,7 @@ OMPI_DECLSPEC OBJ_CLASS_DECLARATION(ompi_communicator_t);
 #define OMPI_COMM_CID_IS_LOWER(comm1,comm2) ( ((comm1)->c_contextid < (comm2)->c_contextid)? 1:0)
 
 
-OMPI_DECLSPEC extern opal_pointer_array_t ompi_mpi_communicators;
+OMPI_DECLSPEC extern opal_rb_tree_t       ompi_mpi_communicators;
 OMPI_DECLSPEC extern opal_pointer_array_t ompi_comm_f_to_c_table;
 
 struct ompi_communicator_t {
@@ -322,12 +323,23 @@ static inline uint32_t ompi_comm_get_cid(ompi_communicator_t* comm)
     return comm->c_contextid;
 }
 
+static inline int ompi_mpi_communicators_cmp_fn(void *key1, void *key2)
+{
+    uint32_t k1 = (uint32_t)(intptr_t)key1;
+    uint32_t k2 = (uint32_t)(intptr_t)key2;
+    if(k1 < k2)
+        return -1;
+    if(k1 > k2)
+        return 1;
+    return 0;
+}
+
 /* return pointer to communicator associated with context id cid,
  * No error checking is done*/
 static inline ompi_communicator_t *ompi_comm_lookup(uint32_t cid)
 {
     /* array of pointers to communicators, indexed by context ID */
-    return (ompi_communicator_t*)opal_pointer_array_get_item(&ompi_mpi_communicators, cid);
+    return (ompi_communicator_t*)opal_rb_tree_find(&ompi_mpi_communicators, (void*)(intptr_t)cid);
 }
 
 static inline struct ompi_proc_t* ompi_comm_peer_lookup(ompi_communicator_t* comm, int peer_id)

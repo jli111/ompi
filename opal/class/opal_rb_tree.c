@@ -28,6 +28,7 @@
 
 /* Private functions */
 static void btree_insert(opal_rb_tree_t *tree, opal_rb_tree_node_t * node);
+static int  btree_insert_safe(opal_rb_tree_t *tree, opal_rb_tree_node_t * node);
 static void btree_delete_fixup(opal_rb_tree_t *tree, opal_rb_tree_node_t * x);
 static opal_rb_tree_node_t * btree_successor(opal_rb_tree_t * tree,
                                              opal_rb_tree_node_t * node);
@@ -115,26 +116,9 @@ int opal_rb_tree_init(opal_rb_tree_t * tree,
     return OPAL_SUCCESS;
 }
 
-
-/* This inserts a node into the tree based on the passed values. */
-int opal_rb_tree_insert(opal_rb_tree_t *tree, void * key, void * value)
+static void opal_rb_tree_balance(opal_rb_tree_t *tree, opal_rb_tree_node_t * node)
 {
     opal_rb_tree_node_t * y;
-    opal_rb_tree_node_t * node;
-    opal_free_list_item_t * item;
-
-    /* get the memory for a node */
-    item = opal_free_list_get (&tree->free_list);
-    if (NULL == item) {
-        return OPAL_ERR_OUT_OF_RESOURCE;
-    }
-    node = (opal_rb_tree_node_t *) item;
-    /* insert the data into the node */
-    node->key = key;
-    node->value = value;
-
-    /* insert the node into the tree */
-    btree_insert(tree, node);
 
     /*do the rotations */
     /* usually one would have to check for NULL, but because of the sentinal,
@@ -176,7 +160,75 @@ int opal_rb_tree_insert(opal_rb_tree_t *tree, void * key, void * value)
     }
     /* after the rotations the root is black */
     tree->root_ptr->left->color = BLACK;
+}
+
+/* This inserts a node into the tree based on the passed values. */
+int opal_rb_tree_insert(opal_rb_tree_t *tree, void * key, void * value)
+{
+    opal_rb_tree_node_t * node;
+    ompi_free_list_item_t * item;
+
+    /* get the memory for a node */
+    OMPI_FREE_LIST_GET_MT(&(tree->free_list), item);
+    if (NULL == item) {
+        return OPAL_ERR_OUT_OF_RESOURCE;
+    }
+    node = (opal_rb_tree_node_t *) item;
+    /* insert the data into the node */
+    node->key = key;
+    node->value = value;
+
+    /* insert the node into the tree */
+    btree_insert(tree, node);
+    opal_rb_tree_balance(tree, node);
+
     return OPAL_SUCCESS;
+}
+
+/* This inserts a node into the tree based on the passed values, if it was not present */
+int opal_rb_tree_test_and_insert(opal_rb_tree_t *tree, void * key, void * value)
+{
+    opal_rb_tree_node_t * node;
+    ompi_free_list_item_t * item;
+
+    /* get the memory for a node */
+    OMPI_FREE_LIST_GET_MT(&(tree->free_list), item);
+    if (NULL == item) {
+        return OPAL_ERR_OUT_OF_RESOURCE;
+    }
+    node = (opal_rb_tree_node_t *) item;
+    /* insert the data into the node */
+    node->key = key;
+    node->value = value;
+
+    /* insert the node into the tree */
+    if( 0 == btree_insert_safe(tree, node) ) {
+        opal_rb_tree_balance(tree, node);
+        return OPAL_SUCCESS;
+    } else {
+        OMPI_FREE_LIST_RETURN_MT(&(tree->free_list), item);
+        return OPAL_EXISTS;
+    }
+}
+
+int opal_rb_tree_update_with(opal_rb_tree_t *tree, void *key, void *value, opal_rb_tree_comp_fn_t compfn)
+{
+    opal_rb_tree_node_t * node;
+    int compvalue;
+
+    node = tree->root_ptr->left;
+    while (node != tree->nill) {
+        compvalue = compfn(key, node->key);
+        /* if the result of the comparison function is 0, we found it */
+        if (compvalue == 0) {
+            node->value = value;
+            return OPAL_SUCCESS;
+        }
+        /* else if it is less than 0, go left, else right */
+        node = ((compvalue < 0) ? node->left : node->right);
+    }
+    /* if we didn't find anything, return NULL */
+    return OPAL_ERR_NOT_FOUND;
 }
 
 /* Finds the node in the tree based on the key */
@@ -199,6 +251,19 @@ void * opal_rb_tree_find_with(opal_rb_tree_t *tree, void *key,
     /* if we didn't find anything, return NULL */
     return NULL;
 }
+
+void *opal_rb_tree_highest_key(opal_rb_tree_t *tree)
+{
+    opal_rb_tree_node_t * node;
+    node = tree->root_ptr->left;
+    while( node != tree->nill ) {
+        if( node->right == tree->nill )
+            return node->key;
+        node = node->right;
+    }
+    return NULL;
+}
+
 
 /* Finds the node in the tree based on the key and returns a pointer
  * to the node. This is a bit a code duplication, but this has to be fast
@@ -351,6 +416,47 @@ static void btree_insert(opal_rb_tree_t *tree, opal_rb_tree_node_t * node)
     node->right = tree->nill;
     ++(tree->tree_size);
     return;
+}
+
+/* Insert an element in the normal binary search tree fashion    */
+/* this function goes through the tree and finds the leaf where
+ * the node will be inserted. It checks at each level if the element
+ * is already in the tree and refuses to insert it in that case */
+static int btree_insert_safe(opal_rb_tree_t *tree, opal_rb_tree_node_t * node)
+{
+    opal_rb_tree_node_t * parent = tree->root_ptr;
+    opal_rb_tree_node_t * n = parent->left; /* the real root of the tree */
+
+    /* set up initial values for the node */
+    node->color = RED;
+    node->parent = NULL;
+    node->left = tree->nill;
+    node->right = tree->nill;
+
+    if(tree->comp(parent, node->key) == 0)
+        return -1;
+
+    /* find the leaf where we will insert the node */
+    while (n != tree->nill) {
+        if(tree->comp(node->key, n->key) == 0)
+            return -1;
+        parent = n;
+        n = ((tree->comp(node->key, n->key) < 0) ? n->left : n->right);
+    }
+
+    /* place it on either the left or the right */
+    if((parent == tree->root_ptr) || (tree->comp(node->key, parent->key) <= 0)) {
+        parent->left = node;
+    } else {
+        parent->right = node;
+    }
+
+    /* set its parent and children */
+    node->parent = parent;
+    node->left = tree->nill;
+    node->right = tree->nill;
+    ++(tree->tree_size);
+    return 0;
 }
 
 /* Fixup the balance of the btree after deletion    */

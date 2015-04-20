@@ -95,7 +95,7 @@ int ompi_cr_verbosity = 0;
 #define NUM_COLLECTIVES 16
 
 #define SIGNAL(comm, modules, highest_module, msg, ret, func)   \
-    do {                                                        \
+    if(ret == OMPI_SUCCESS) {                                   \
         bool found = false;                                     \
         int k;                                                  \
         mca_coll_base_module_t *my_module =                     \
@@ -109,47 +109,69 @@ int ompi_cr_verbosity = 0;
                 if (NULL != my_module->ft_event) {              \
                     ret = my_module->ft_event(msg);             \
                     if( OMPI_SUCCESS != ret ) {                 \
-                        return ret;                             \
+                        return;                                 \
                     }                                           \
                 }                                               \
             }                                                   \
         }                                                       \
-    } while (0)
+    }
 
+static int notify_collectives_iterator_condition(void *value)
+{
+    ompi_communicator_t *comm = (ompi_communicator_t*)value;
+    return NULL != comm;
+}
+
+static mca_coll_base_module_t *notify_collectives_modules[NUM_COLLECTIVES];
+static int                     notify_collectives_highest_module, notify_collectives_ret, notify_collectives_msg;
+static void notify_collectives_iterator_action(void *key, void *value)
+{
+    ompi_communicator_t *comm = (ompi_communicator_t*)value;
+    assert(NULL != comm);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, allgather);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, allgatherv);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, allreduce);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, alltoall);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, alltoallv);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, alltoallw);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, barrier);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, bcast);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, exscan);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, gather);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, gatherv);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, reduce);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, reduce_scatter);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, scan);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, scatter);
+    SIGNAL(comm, notify_collectives_modules, notify_collectives_highest_module,
+           notify_collectives_msg, notify_collectives_ret, scatterv);
+}
 
 static int
 notify_collectives(int msg)
 {
-    mca_coll_base_module_t *modules[NUM_COLLECTIVES];
-    int i, max, ret, highest_module = 0;
-
-    memset(&modules, 0, sizeof(mca_coll_base_module_t*) * NUM_COLLECTIVES);
-
-    max = opal_pointer_array_get_size(&ompi_mpi_communicators);
-    for (i = 0 ; i < max ; ++i) {
-        ompi_communicator_t *comm =
-            (ompi_communicator_t *)opal_pointer_array_get_item(&ompi_mpi_communicators, i);
-        if (NULL == comm) continue;
-
-        SIGNAL(comm, modules, highest_module, msg, ret, allgather);
-        SIGNAL(comm, modules, highest_module, msg, ret, allgatherv);
-        SIGNAL(comm, modules, highest_module, msg, ret, allreduce);
-        SIGNAL(comm, modules, highest_module, msg, ret, alltoall);
-        SIGNAL(comm, modules, highest_module, msg, ret, alltoallv);
-        SIGNAL(comm, modules, highest_module, msg, ret, alltoallw);
-        SIGNAL(comm, modules, highest_module, msg, ret, barrier);
-        SIGNAL(comm, modules, highest_module, msg, ret, bcast);
-        SIGNAL(comm, modules, highest_module, msg, ret, exscan);
-        SIGNAL(comm, modules, highest_module, msg, ret, gather);
-        SIGNAL(comm, modules, highest_module, msg, ret, gatherv);
-        SIGNAL(comm, modules, highest_module, msg, ret, reduce);
-        SIGNAL(comm, modules, highest_module, msg, ret, reduce_scatter);
-        SIGNAL(comm, modules, highest_module, msg, ret, scan);
-        SIGNAL(comm, modules, highest_module, msg, ret, scatter);
-        SIGNAL(comm, modules, highest_module, msg, ret, scatterv);
-    }
-
-    return OMPI_SUCCESS;
+    memset(&notify_collectives_modules, 0, sizeof(mca_coll_base_module_t*) * NUM_COLLECTIVES);
+    notify_collectives_highest_module = 0;
+    notify_collectives_ret = OMPI_SUCCESS;
+    opal_rb_tree_traverse(&ompi_mpi_communicators,
+                          notify_collectives_iterator_condition,
+                          notify_collectives_iterator_action);
+    return notify_collectives_ret;
 }
 
 
