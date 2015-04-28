@@ -193,7 +193,7 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
     if (OMPI_SUCCESS != ret) {
         return ret;
     }
-    start = ompi_mpi_communicators.lowest_free;
+    start = ompi_mpi_communicators.highest_taken + 1;
 
     while (!done) {
         /**
@@ -251,7 +251,7 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
                 response = 0; /* nope, not acceptable */
             }
         }
-
+#if 0
         ret = (allredfnct)(&response, &glresponse, 1, MPI_MIN, comm, bridgecomm,
                            local_leader, remote_leader, send_first, "nextcid", iter );
         ++iter;
@@ -271,6 +271,11 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
             }
             start = nextcid+1; /* that's where we can start the next round */
         }
+#else
+        assert(response == 1);
+        done = 1;
+        break;
+#endif
     }
 
     /* set the according values to the newcomm */
@@ -279,6 +284,11 @@ int ompi_comm_nextcid ( ompi_communicator_t* newcomm,
 
  release_and_return:
     ompi_comm_unregister_cid (comm->c_contextid);
+
+#if 0
+    opal_output(0, "%s: FREE = %d SIZE = %d\n", ORTE_NAME_PRINT(ORTE_PROC_MY_NAME),
+                ompi_mpi_communicators.number_free, ompi_mpi_communicators.size);
+#endif
 
     return ret;
 }
@@ -341,7 +351,7 @@ int ompi_comm_nextcid_nb (ompi_communicator_t* newcomm,
     context->comm          = comm;
     context->bridgecomm    = bridgecomm;
     context->mode          = mode;
-    context->start         = ompi_mpi_communicators.lowest_free;
+    context->start         = ompi_mpi_communicators.highest_taken + 1;
 
     request->context = context;
 

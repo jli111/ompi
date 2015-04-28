@@ -47,9 +47,14 @@ struct opal_pointer_array_t {
     opal_mutex_t lock;
     /** Index of lowest free element.  NOTE: This is only an
         optimization to know where to search for the first free slot.
-        It does \em not necessarily imply indices all above this index
+        It does \em not necessarily imply all indices above this index
         are not taken! */
     int lowest_free;
+    /** Index of highest taken element.  NOTE: This is only an
+        optimization to know where to search for the last free slot.
+        It does \em not necessarily imply indices under this index
+        are not taken! */
+    int highest_taken;
     /** number of free elements in the list */
     int number_free;
     /** size of list, i.e. number of elements in addr */
@@ -194,6 +199,7 @@ static inline void opal_pointer_array_remove_all(opal_pointer_array_t *array)
 
     OPAL_THREAD_LOCK(&array->lock);
     array->lowest_free = 0;
+    array->highest_taken = -1;
     array->number_free = array->size;
     for(i=0; i<array->size; i++) {
         array->addr[i] = NULL;
