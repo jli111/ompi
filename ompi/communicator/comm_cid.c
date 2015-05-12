@@ -647,12 +647,13 @@ int ompi_comm_activate ( ompi_communicator_t** newcomm,
         OMPI_COMM_SET_PML_ADDED(*newcomm);
     }
 
-
+#if 0
     ret = (allredfnct)(&ok, &gok, 1, MPI_MIN, comm, bridgecomm,
                        local_leader, remote_leader, send_first, "activate", 0 );
     if( OMPI_SUCCESS != ret ) {
         goto bail_on_error;
     }
+#endif
 
 
 
