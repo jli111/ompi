@@ -435,8 +435,6 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
  */
 static inline int ompi_request_complete(ompi_request_t* request, bool with_signal)
 {
-    // If the condition hasn't been created, we will just mark it
-    // as complete (1) and complete the request without the condition.
     opal_atomic_cmpset_ptr(&request->req_complete, (void*)0L, (void*)1L);
     
     // If the condition has been created, we lock the mutex to complete
@@ -449,32 +447,19 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
         opal_atomic_cmpset_ptr(&request->req_complete, tmp, (void*)1L);
         OPAL_THREAD_UNLOCK(tmp->lock);
     }
-    //if complete_cb_data is not null, callback
-    if( !opal_atomic_cmpset_ptr(&request->req_complete_cb, NULL, (void*)1L) ) {
-        if ((long)(request->req_complete_cb) != 1L) {
-            ompi_request_complete_fn_t tmp = request->req_complete_cb;
-            tmp( request );
+    
+    ompi_request_complete_fn_t tmp = request->req_complete_cb;
+    if( NULL != tmp ){
             request->req_complete_cb = NULL;
-        }
+            tmp( request );
     }
-    ompi_request_completed++;
+
     if( OPAL_UNLIKELY(MPI_SUCCESS != request->req_status.MPI_ERROR) ) {
         ompi_request_failed++;
     }
 
     
     return OMPI_SUCCESS;
-}
-
-static inline int ompi_request_set_callback(ompi_request_t* request,
-                                            ompi_request_complete_fn_t cb,
-                                            void* cb_data)
-{
-    request->req_complete_cb_data = cb_data;
-    long temp = (long)cb;
-    //if complete_cb_data is NULL, set call_back return 1, cannot cast a function pointer to object pointer
-    return opal_atomic_cmpset_ptr(&request->req_complete_cb, NULL, (void *)temp);
-
 }
 
 END_C_DECLS
