@@ -263,8 +263,13 @@ send_request_pml_complete(mca_pml_ob1_send_request_t *sendreq)
         mca_pml_base_bsend_request_fini((ompi_request_t*)sendreq);
     }
 
-    OPAL_THREAD_LOCK(&ompi_request_lock);
-    if(false == sendreq->req_send.req_base.req_ompi.req_complete) {
+    sendreq->req_send.req_base.req_pml_complete = true;
+
+    if(sendreq->req_send.req_base.req_free_called) {
+        MCA_PML_OB1_SEND_REQUEST_RETURN(sendreq);
+    }
+
+       if( (void*)1L  != sendreq->req_send.req_base.req_ompi.req_complete) {
         /* Should only be called for long messages (maybe synchronous) */
         MCA_PML_OB1_SEND_REQUEST_MPI_COMPLETE(sendreq, true);
     } else {

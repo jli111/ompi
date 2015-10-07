@@ -225,16 +225,24 @@ int ompi_request_default_wait_all( size_t count,
     ompi_request_t **rptr;
     ompi_request_t *request;
     int mpi_error = OMPI_SUCCESS;
+    ompi_wait_sync_t sync;
+
+
+    WAIT_SYNC_INIT(&sync,count);
 
     rptr = requests;
     for (i = 0; i < count; i++) {
         request = *rptr++;
 
-        if (request->req_complete == true) {
+        opal_atomic_cmpset_ptr(&request->req_complete, (void*)0L, &sync);
+        
+
+        if (request->req_complete == (void*)1L) {
             if( OPAL_UNLIKELY( MPI_SUCCESS != request->req_status.MPI_ERROR ) ) {
                 failed++;
             }
             completed++;
+            wait_sync_update(&sync);
         }
     }
 
@@ -251,7 +259,7 @@ int ompi_request_default_wait_all( size_t count,
          * not completed pend on condition variable until a request
          * completes
          */
-        OPAL_THREAD_LOCK(&ompi_request_lock);
+        OPAL_THREAD_LOCK(sync.lock);
         ompi_request_waiting++;
 #if OPAL_ENABLE_MULTI_THREADS
         /*
@@ -262,7 +270,7 @@ int ompi_request_default_wait_all( size_t count,
         rptr = requests;
         for( completed = i = 0; i < count; i++ ) {
             request = *rptr++;
-            if (request->req_complete == true) {
+            if (request->req_complete == (void*)1L ) {
                 if( MPI_SUCCESS != request->req_status.MPI_ERROR ) {
                     failed++;
                 }
@@ -271,11 +279,12 @@ int ompi_request_default_wait_all( size_t count,
         }
         if( failed > 0 ) {
             ompi_request_waiting--;
-            OPAL_THREAD_UNLOCK(&ompi_request_lock);
+            OPAL_THREAD_UNLOCK(sync.lock);
             goto finish;
         }
 #endif  /* OPAL_ENABLE_MULTI_THREADS */
-        while( completed != count ) {
+ //       while( completed != count ) {
+          while( sync.count > 0 ) {
             /* check number of pending requests */
             size_t start = ompi_request_completed;
             size_t pending = count - completed;
@@ -283,8 +292,9 @@ int ompi_request_default_wait_all( size_t count,
             /*
              * wait until at least pending requests complete
              */
-            while (pending > ompi_request_completed - start) {
-                opal_condition_wait(&ompi_request_cond, &ompi_request_lock);
+            //while (pending > ompi_request_completed - start) {
+            while (sync.count > 0) {
+                opal_condition_wait(sync.condition, sync.lock);
                 /*
                  * Check for failed requests. If one request fails, then
                  * this operation completes in error marking the remaining
@@ -293,7 +303,7 @@ int ompi_request_default_wait_all( size_t count,
                 if( OPAL_UNLIKELY( 0 < (ompi_request_failed - start_failed) ) ) {
                     failed += (ompi_request_failed - start_failed);
                     ompi_request_waiting--;
-                    OPAL_THREAD_UNLOCK(&ompi_request_lock);
+                    OPAL_THREAD_UNLOCK(sync.lock);
                     goto finish;
                 }
             }
@@ -303,7 +313,7 @@ int ompi_request_default_wait_all( size_t count,
             rptr = requests;
             for( failed = completed = i = 0; i < count; i++ ) {
                 request = *rptr++;
-                if (request->req_complete == true) {
+                if (request->req_complete == (void*)1L) {
                     if( MPI_SUCCESS != request->req_status.MPI_ERROR ) {
                         failed++;
                     }
@@ -312,7 +322,7 @@ int ompi_request_default_wait_all( size_t count,
             }
         }
         ompi_request_waiting--;
-        OPAL_THREAD_UNLOCK(&ompi_request_lock);
+        OPAL_THREAD_UNLOCK(sync.lock);
     }
 
 #if OPAL_ENABLE_FT_CR == 1
@@ -339,7 +349,7 @@ int ompi_request_default_wait_all( size_t count,
              * Since some may still be pending.
              */
             if( 0 >= failed ) {
-                assert( true == request->req_complete );
+                assert( (void*)1L == request->req_complete );
             }
 
             if( request->req_state == OMPI_REQUEST_INACTIVE ) {
@@ -395,7 +405,7 @@ int ompi_request_default_wait_all( size_t count,
              * Since some may still be pending.
              */
             if( 0 >= failed ) {
-                assert( true == request->req_complete );
+                assert( (void*)1L == request->req_complete );
             } else {
                 /* If the request is still pending due to a failed request
                  * then skip it in this loop.
@@ -436,6 +446,7 @@ int ompi_request_default_wait_all( size_t count,
             }
         }
     }
+    WAIT_SYNC_RELEASE(&sync);
     return mpi_error;
 }
 
