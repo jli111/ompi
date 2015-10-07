@@ -289,9 +289,7 @@ int ompi_request_default_wait_all( size_t count,
             size_t start = ompi_request_completed;
             size_t pending = count - completed;
             size_t start_failed = ompi_request_failed;
-            /*
-             * wait until at least pending requests complete
-             */
+            
             //while (pending > ompi_request_completed - start) {
             while (sync.count > 0) {
                 opal_condition_wait(sync.condition, sync.lock);
@@ -465,6 +463,11 @@ int ompi_request_default_wait_some(
     int rc = MPI_SUCCESS;
     ompi_request_t **rptr=NULL;
     ompi_request_t *request=NULL;
+    ompi_wait_sync_t sync;
+
+
+    WAIT_SYNC_INIT(&sync,1);
+
 
     *outcount = 0;
     for (i = 0; i < count; i++){
@@ -488,7 +491,7 @@ int ompi_request_default_wait_some(
                 num_requests_null_inactive++;
                 continue;
             }
-            if (true == request->req_complete) {
+            if ( (void*)1L == request->req_complete) {
                 indices[i] = 1;
                 num_requests_done++;
             }
@@ -507,15 +510,13 @@ int ompi_request_default_wait_some(
      * We only get here when outcount still is 0.
      * give up and sleep until completion
      */
-    OPAL_THREAD_LOCK(&ompi_request_lock);
-    ompi_request_waiting++;
-    do {
+    OPAL_THREAD_LOCK(&sync.lock);
         rptr = requests;
         num_requests_null_inactive = 0;
         num_requests_done = 0;
         for (i = 0; i < count; i++, rptr++) {
             request = *rptr;
-            /*
+             /*
              * Check for null or completed persistent request.
              * For MPI_REQUEST_NULL, the req_state is always OMPI_REQUEST_INACTIVE.
              */
@@ -523,18 +524,18 @@ int ompi_request_default_wait_some(
                 num_requests_null_inactive++;
                 continue;
             }
-            if (request->req_complete == true) {
+
+            opal_atomic_cmpset_ptr(&request->req_complete, (void*)0L, &sync);
+            if(request->req_complete == (void*)1L) {
                 indices[i] = 1;
                 num_requests_done++;
+                wait_sync_update(&sync);
             }
         }
-        if (num_requests_null_inactive == count ||
-            num_requests_done > 0)
-            break;
-        opal_condition_wait(&ompi_request_cond, &ompi_request_lock);
-    } while (1);
-    ompi_request_waiting--;
-    OPAL_THREAD_UNLOCK(&ompi_request_lock);
+        if(sync.count > 0){
+            opal_condition_wait(&sync.condition,&sync.lock);
+        }
+    OPAL_THREAD_UNLOCK(&sync.lock);
 
 #if OPAL_ENABLE_PROGRESS_THREADS
 finished:
@@ -555,6 +556,28 @@ finished:
     if(num_requests_null_inactive == count) {
         *outcount = MPI_UNDEFINED;
     } else {
+
+        /* Do the final counting and */
+        /* Clean up the synchronization primitives */
+
+        rptr = requests;
+        num_requests_null_inactive = 0;
+        num_requests_done = 0;
+        for (i = 0; i < count; i++, rptr++) {
+            request = *rptr;
+
+            if( request->req_state == OMPI_REQUEST_INACTIVE ) {
+                num_requests_null_inactive++;
+                continue;
+            }
+  
+            opal_atomic_cmpset_ptr(&request->req_complete, &sync, (void*)0L);
+            if(request->req_complete == (void*)1L) {
+                indices[i] = 1;
+                num_requests_done++;
+            }
+        }
+
         /*
          * Compress the index array.
          */
@@ -568,7 +591,7 @@ finished:
 
         for (i = 0; i < num_requests_done; i++) {
             request = requests[indices[i]];
-            assert( true == request->req_complete );
+            assert( (void*)1L == request->req_complete );
             /* Per note above, we have to call gen request query_fn even
                if STATUS_IGNORE was provided */
             if (OMPI_REQUEST_GEN == request->req_type) {
