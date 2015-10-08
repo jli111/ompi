@@ -442,13 +442,13 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
     
     // If the condition has been created, we lock the mutex to complete
     // the request.
-    if(request->req_complete!=REQUEST_PENDING && request->req_complete!=REQUEST_COMPLETED){
+    if(request->req_complete!= REQUEST_COMPLETED){
         // update the count
-        ompi_wait_sync_t *tmp = request->req_complete;
-        OPAL_THREAD_LOCK(tmp->lock);
-        wait_sync_update(request->req_complete);
-        OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, tmp, REQUEST_COMPLETED);
-        OPAL_THREAD_UNLOCK(tmp->lock);
+        ompi_wait_sync_t *ret = request->req_complete;
+        OPAL_THREAD_LOCK(ret->lock);
+        wait_sync_update(ret);
+        OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, ret, REQUEST_COMPLETED);
+        OPAL_THREAD_UNLOCK(ret->lock);
     }
     
     ompi_request_complete_fn_t tmp = request->req_complete_cb;
