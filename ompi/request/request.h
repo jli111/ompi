@@ -126,6 +126,9 @@ struct ompi_wait_sync_t {
 typedef struct ompi_request_t ompi_request_t;
 typedef struct ompi_wait_sync_t ompi_wait_sync_t;
 
+#define REQUEST_COMPLETED (void*)1L
+#define REQUEST_PENDING   (void*)0L
+
 #define WAIT_SYNC_INIT(sync,c)                        \
     do {                                              \
        (sync)->count = c;                             \
@@ -410,8 +413,8 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
      ompi_wait_sync_t sync;
      WAIT_SYNC_INIT(&sync,1); 
      
-     opal_atomic_cmpset_ptr(&req->req_complete, (void*)0L, &sync);
-     if(req->req_complete != (void*)1L){
+     opal_atomic_cmpset_ptr(&req->req_complete, REQUEST_PENDING, &sync);
+     if(req->req_complete != REQUEST_COMPLETED){
         OPAL_THREAD_LOCK(sync.lock);
 #if OPAL_ENABLE_PROGRESS_THREADS
         if(opal_progress_spin(&req->req_complete)) {
@@ -435,16 +438,16 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
  */
 static inline int ompi_request_complete(ompi_request_t* request, bool with_signal)
 {
-    opal_atomic_cmpset_ptr(&request->req_complete, (void*)0L, (void*)1L);
+    opal_atomic_cmpset_ptr(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED);
     
     // If the condition has been created, we lock the mutex to complete
     // the request.
-    if(request->req_complete!=(void*)0L && request->req_complete!=(void*)1L){
+    if(request->req_complete!=REQUEST_PENDING && request->req_complete!=REQUEST_COMPLETED){
         // update the count
         ompi_wait_sync_t *tmp = request->req_complete;
         OPAL_THREAD_LOCK(tmp->lock);
         wait_sync_update(request->req_complete);
-        opal_atomic_cmpset_ptr(&request->req_complete, tmp, (void*)1L);
+        opal_atomic_cmpset_ptr(&request->req_complete, tmp, REQUEST_COMPLETED);
         OPAL_THREAD_UNLOCK(tmp->lock);
     }
     

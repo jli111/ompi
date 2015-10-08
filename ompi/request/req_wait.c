@@ -234,10 +234,10 @@ int ompi_request_default_wait_all( size_t count,
     for (i = 0; i < count; i++) {
         request = *rptr++;
 
-        opal_atomic_cmpset_ptr(&request->req_complete, (void*)0L, &sync);
+        opal_atomic_cmpset_ptr(&request->req_complete, REQUEST_PENDING, &sync);
         
 
-        if (request->req_complete == (void*)1L) {
+        if (request->req_complete == REQUEST_COMPLETED) {
             if( OPAL_UNLIKELY( MPI_SUCCESS != request->req_status.MPI_ERROR ) ) {
                 failed++;
             }
@@ -270,7 +270,7 @@ int ompi_request_default_wait_all( size_t count,
         rptr = requests;
         for( completed = i = 0; i < count; i++ ) {
             request = *rptr++;
-            if (request->req_complete == (void*)1L ) {
+            if (request->req_complete == REQUEST_COMPLETED ) {
                 if( MPI_SUCCESS != request->req_status.MPI_ERROR ) {
                     failed++;
                 }
@@ -311,7 +311,7 @@ int ompi_request_default_wait_all( size_t count,
             rptr = requests;
             for( failed = completed = i = 0; i < count; i++ ) {
                 request = *rptr++;
-                if (request->req_complete == (void*)1L) {
+                if (request->req_complete == REQUEST_COMPLETED) {
                     if( MPI_SUCCESS != request->req_status.MPI_ERROR ) {
                         failed++;
                     }
@@ -347,7 +347,7 @@ int ompi_request_default_wait_all( size_t count,
              * Since some may still be pending.
              */
             if( 0 >= failed ) {
-                assert( (void*)1L == request->req_complete );
+                assert( REQUEST_COMPLETED == request->req_complete );
             }
 
             if( request->req_state == OMPI_REQUEST_INACTIVE ) {
@@ -403,7 +403,7 @@ int ompi_request_default_wait_all( size_t count,
              * Since some may still be pending.
              */
             if( 0 >= failed ) {
-                assert( (void*)1L == request->req_complete );
+                assert( REQUEST_COMPLETED == request->req_complete );
             } else {
                 /* If the request is still pending due to a failed request
                  * then skip it in this loop.
@@ -491,7 +491,7 @@ int ompi_request_default_wait_some(
                 num_requests_null_inactive++;
                 continue;
             }
-            if ( (void*)1L == request->req_complete) {
+            if ( REQUEST_COMPLETED == request->req_complete) {
                 indices[i] = 1;
                 num_requests_done++;
             }
@@ -525,8 +525,8 @@ int ompi_request_default_wait_some(
                 continue;
             }
 
-            opal_atomic_cmpset_ptr(&request->req_complete, (void*)0L, &sync);
-            if(request->req_complete == (void*)1L) {
+            opal_atomic_cmpset_ptr(&request->req_complete, REQUEST_PENDING, &sync);
+            if(request->req_complete == REQUEST_COMPLETED) {
                 indices[i] = 1;
                 num_requests_done++;
                 wait_sync_update(&sync);
@@ -571,8 +571,8 @@ finished:
                 continue;
             }
   
-            opal_atomic_cmpset_ptr(&request->req_complete, &sync, (void*)0L);
-            if(request->req_complete == (void*)1L) {
+            opal_atomic_cmpset_ptr(&request->req_complete, &sync, REQUEST_PENDING);
+            if(request->req_complete == REQUEST_COMPLETED) {
                 indices[i] = 1;
                 num_requests_done++;
             }
@@ -591,7 +591,7 @@ finished:
 
         for (i = 0; i < num_requests_done; i++) {
             request = requests[indices[i]];
-            assert( (void*)1L == request->req_complete );
+            assert( REQUEST_COMPLETED == request->req_complete );
             /* Per note above, we have to call gen request query_fn even
                if STATUS_IGNORE was provided */
             if (OMPI_REQUEST_GEN == request->req_type) {
