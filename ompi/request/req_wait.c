@@ -234,7 +234,7 @@ int ompi_request_default_wait_all( size_t count,
     for (i = 0; i < count; i++) {
         request = *rptr++;
 
-        opal_atomic_cmpset_ptr(&request->req_complete, REQUEST_PENDING, &sync);
+        OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, &sync);
         
 
         if (request->req_complete == REQUEST_COMPLETED) {
@@ -525,7 +525,7 @@ int ompi_request_default_wait_some(
                 continue;
             }
 
-            opal_atomic_cmpset_ptr(&request->req_complete, REQUEST_PENDING, &sync);
+            OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, &sync);
             if(request->req_complete == REQUEST_COMPLETED) {
                 indices[i] = 1;
                 num_requests_done++;
@@ -571,7 +571,7 @@ finished:
                 continue;
             }
   
-            opal_atomic_cmpset_ptr(&request->req_complete, &sync, REQUEST_PENDING);
+            OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, &sync, REQUEST_PENDING);
             if(request->req_complete == REQUEST_COMPLETED) {
                 indices[i] = 1;
                 num_requests_done++;
