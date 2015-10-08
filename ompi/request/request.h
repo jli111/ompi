@@ -413,7 +413,7 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
      ompi_wait_sync_t sync;
      WAIT_SYNC_INIT(&sync,1); 
      
-     opal_atomic_cmpset_ptr(&req->req_complete, REQUEST_PENDING, &sync);
+     OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync);
      if(req->req_complete != REQUEST_COMPLETED){
         OPAL_THREAD_LOCK(sync.lock);
 #if OPAL_ENABLE_PROGRESS_THREADS
@@ -438,7 +438,7 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
  */
 static inline int ompi_request_complete(ompi_request_t* request, bool with_signal)
 {
-    opal_atomic_cmpset_ptr(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED);
+    OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED);
     
     // If the condition has been created, we lock the mutex to complete
     // the request.
@@ -447,7 +447,7 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
         ompi_wait_sync_t *tmp = request->req_complete;
         OPAL_THREAD_LOCK(tmp->lock);
         wait_sync_update(request->req_complete);
-        opal_atomic_cmpset_ptr(&request->req_complete, tmp, REQUEST_COMPLETED);
+        OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, tmp, REQUEST_COMPLETED);
         OPAL_THREAD_UNLOCK(tmp->lock);
     }
     
