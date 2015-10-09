@@ -97,7 +97,9 @@ int ompi_request_default_wait_any(
     int completed = -1;
     ompi_request_t **rptr=NULL;
     ompi_request_t *request=NULL;
+    ompi_wait_sync_t sync;
 
+    WAIT_SYNC_INIT(&sync,1);
 #if OPAL_ENABLE_PROGRESS_THREADS
     /* poll for completion */
     OPAL_THREAD_ADD32(&ompi_progress_thread_count,1);
@@ -114,7 +116,7 @@ int ompi_request_default_wait_any(
                 num_requests_null_inactive++;
                 continue;
             }
-            if (true == request->req_complete) {
+            if (REQUEST_COMPLETED == request->req_complete) {
                 completed = i;
                 OPAL_THREAD_ADD32(&ompi_progress_thread_count,-1);
                 goto finished;
@@ -130,9 +132,9 @@ int ompi_request_default_wait_any(
 #endif
 
     /* give up and sleep until completion */
-    OPAL_THREAD_LOCK(&ompi_request_lock);
+    OPAL_THREAD_LOCK(sync.lock);
     ompi_request_waiting++;
-    do {
+    
         rptr = requests;
         num_requests_null_inactive = 0;
         for (i = 0; i < count; i++, rptr++) {
@@ -151,23 +153,36 @@ int ompi_request_default_wait_any(
                 num_requests_null_inactive++;
                 continue;
             }
-            if (request->req_complete == true) {
-                completed = i;
+            OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED);
+            if (request->req_complete == REQUEST_COMPLETED) {
+                wait_sync_update(&sync);
                 break;
             }
         }
-        if(num_requests_null_inactive == count)
-            break;
-        if (completed < 0) {
+        if (sync.count > 0) {
             opal_condition_wait(&ompi_request_cond, &ompi_request_lock);
         }
-    } while (completed < 0);
-    ompi_request_waiting--;
-    OPAL_THREAD_UNLOCK(&ompi_request_lock);
+    
+    OPAL_THREAD_UNLOCK(sync.lock);
 
 #if OPAL_ENABLE_PROGRESS_THREADS
 finished:
 #endif  /* OPAL_ENABLE_PROGRESS_THREADS */
+
+    /* recheck the complete status and clean up the sync primitives */
+    rptr = requests;
+    num_requests_null_inactive = 0;
+    for(i = 0; i < count; i++, rptr++) {
+        if( request->req_state == OMPI_REQUEST_INACTIVE ) {
+            num_requests_null_inactive++;
+            continue;
+        }
+        OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, &sync, REQUEST_PENDING);
+        if (request->req_complete == REQUEST_COMPLETED) {
+            completed = i;
+            break;
+        }
+    }
 
     if(num_requests_null_inactive == count) {
         *index = MPI_UNDEFINED;
@@ -175,7 +190,7 @@ finished:
             *status = ompi_status_empty;
         }
     } else {
-        assert( true == request->req_complete );
+        assert( REQUEST_COMPLETED == request->req_complete );
         /* Per note above, we have to call gen request query_fn even
            if STATUS_IGNORE was provided */
         if (OMPI_REQUEST_GEN == request->req_type) {
@@ -206,13 +221,13 @@ finished:
         rptr = requests;
         for (i = 0; i < count; i++, rptr++) {
             request = *rptr;
-            if( true == request->req_complete) {
+            if( REQUEST_COMPLETED == request->req_complete) {
                 OMPI_CRCP_REQUEST_COMPLETE(request);
             }
         }
     }
 #endif
-
+    WAIT_SYNC_RELEASE(&sync);
     return rc;
 }
 
@@ -319,7 +334,6 @@ int ompi_request_default_wait_all( size_t count,
                 }
             }
         }
-        ompi_request_waiting--;
         OPAL_THREAD_UNLOCK(sync.lock);
     }
 
@@ -328,7 +342,7 @@ int ompi_request_default_wait_all( size_t count,
         rptr = requests;
         for (i = 0; i < count; i++, rptr++) {
             request = *rptr;
-            if( true == request->req_complete) {
+            if( REQUEST_COMPLETED == request->req_complete) {
                 OMPI_CRCP_REQUEST_COMPLETE(request);
             }
         }
@@ -510,7 +524,7 @@ int ompi_request_default_wait_some(
      * We only get here when outcount still is 0.
      * give up and sleep until completion
      */
-    OPAL_THREAD_LOCK(&sync.lock);
+    OPAL_THREAD_LOCK(sync.lock);
         rptr = requests;
         num_requests_null_inactive = 0;
         num_requests_done = 0;
@@ -533,9 +547,9 @@ int ompi_request_default_wait_some(
             }
         }
         if(sync.count > 0){
-            opal_condition_wait(&sync.condition,&sync.lock);
+            opal_condition_wait(sync.condition,sync.lock);
         }
-    OPAL_THREAD_UNLOCK(&sync.lock);
+    OPAL_THREAD_UNLOCK(sync.lock);
 
 #if OPAL_ENABLE_PROGRESS_THREADS
 finished:
@@ -546,7 +560,7 @@ finished:
         rptr = requests;
         for (i = 0; i < count; i++, rptr++) {
             request = *rptr;
-            if( true == request->req_complete) {
+            if( REQUEST_COMPLETED == request->req_complete) {
                 OMPI_CRCP_REQUEST_COMPLETE(request);
             }
         }
@@ -577,6 +591,8 @@ finished:
                 num_requests_done++;
             }
         }
+
+        WAIT_SYNC_RELEASE(&sync);
 
         /*
          * Compress the index array.
