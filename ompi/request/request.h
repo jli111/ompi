@@ -35,6 +35,7 @@
 #include "opal/class/opal_free_list.h"
 #include "opal/class/opal_pointer_array.h"
 #include "opal/threads/condition.h"
+#include "opal/threads/wait_sync.h"
 #include "ompi/constants.h"
 
 BEGIN_C_DECLS
@@ -113,36 +114,13 @@ struct ompi_request_t {
     ompi_mpi_object_t req_mpi_object;           /**< Pointer to MPI object that created this request */
 };
 
-struct ompi_wait_sync_t {
-    int count;
-    opal_condition_t *condition;
-    opal_mutex_t *lock;
-
-};
-
 /**
  * Convenience typedef
  */
 typedef struct ompi_request_t ompi_request_t;
-typedef struct ompi_wait_sync_t ompi_wait_sync_t;
 
 #define REQUEST_COMPLETED (void*)1L
 #define REQUEST_PENDING   (void*)0L
-
-#define WAIT_SYNC_INIT(sync,c)                        \
-    do {                                              \
-       (sync)->count = c;                             \
-       (sync)->condition = OBJ_NEW(opal_condition_t); \
-       (sync)->lock = OBJ_NEW(opal_mutex_t);          \
-    }while(0);
-
-#define WAIT_SYNC_RELEASE(sync)                       \
-    do {                                              \
-       OBJ_RELEASE( (sync)->condition );              \
-       OBJ_RELEASE( (sync)->lock );                   \
-    } while(0);
-
-
 
 /**
  * Padded struct to maintain back compatibiltiy.
@@ -392,17 +370,6 @@ static inline int ompi_request_free(ompi_request_t** request)
 #define ompi_request_wait_any   (ompi_request_functions.req_wait_any)
 #define ompi_request_wait_all   (ompi_request_functions.req_wait_all)
 #define ompi_request_wait_some  (ompi_request_functions.req_wait_some)
-
-
-
-static inline void wait_sync_update(ompi_wait_sync_t *sync){
-
-    opal_atomic_add_32(&sync->count,-1);
-    if(sync->count == 0)
-      opal_condition_signal(sync->condition);
-}
-
-
 
 /**
  * Wait a particular request for completion
