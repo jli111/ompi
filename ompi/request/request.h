@@ -374,26 +374,31 @@ static inline int ompi_request_free(ompi_request_t** request)
 /**
  * Wait a particular request for completion
  */
+
+#if OPAL_ENABLE_PROGRESS_THREADS
 static inline void ompi_request_wait_completion(ompi_request_t *req)
 {
-
-     ompi_wait_sync_t sync;
-     WAIT_SYNC_INIT(&sync,1); 
+    ompi_wait_sync_t sync;
+    WAIT_SYNC_INIT(&sync,1); 
      
-     OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync);
-     if(req->req_complete != REQUEST_COMPLETED){
+    OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync);
+
+    if(req->req_complete != REQUEST_COMPLETED){
         OPAL_THREAD_LOCK(sync.lock);
-#if OPAL_ENABLE_PROGRESS_THREADS
-        if(opal_progress_spin(&req->req_complete)) {
-            return;
-        }
-#endif
         opal_condition_wait(sync.condition, sync.lock);
         OPAL_THREAD_UNLOCK(sync.lock);
     }
     WAIT_SYNC_RELEASE(&sync);
-}
 
+}
+#else
+static inline void ompi_request_wait_completion(ompi_request_t *req)
+{
+   while(REQUEST_PENDING == req->req_complete){
+        opal_progress();
+   }
+}
+#endif
 /**
  *  Signal or mark a request as complete. If with_signal is true this will
  *  wake any thread pending on the request and ompi_request_lock should be
