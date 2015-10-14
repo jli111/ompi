@@ -26,11 +26,11 @@ typedef struct ompi_wait_sync_t ompi_wait_sync_t;
        OBJ_RELEASE( (sync)->lock );                   \
     } while(0);
 
-#if (HAVE_PTHREAD_H == 1)
+#if OPAL_ENABLE_PROGRESS_THREADS
 #define OPAL_ATOMIC_ADD_32(a,b)    opal_atomic_add_32(a,b);                   
 #else
 #define OPAL_ATOMIC_ADD_32(a,b)    (*a += b);
-#endif /* HAVE_PTHREAD_H */
+#endif
 
 static inline void wait_sync_update(ompi_wait_sync_t *sync){
 
