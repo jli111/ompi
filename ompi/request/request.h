@@ -384,9 +384,7 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
     OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync);
 
     if(req->req_complete != REQUEST_COMPLETED){
-        OPAL_THREAD_LOCK(sync.lock);
-        opal_condition_wait(sync.condition, sync.lock);
-        OPAL_THREAD_UNLOCK(sync.lock);
+        opal_condition_wait(&sync.condition, &sync.lock);
     }
     WAIT_SYNC_RELEASE(&sync);
 
@@ -410,30 +408,23 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
  */
 static inline int ompi_request_complete(ompi_request_t* request, bool with_signal)
 {
-    OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED);
-    
-    // If the condition has been created, we lock the mutex to complete
-    // the request.
-    if(request->req_complete!= REQUEST_COMPLETED){
-        // update the count
-        ompi_wait_sync_t *ret = request->req_complete;
-        OPAL_THREAD_LOCK(ret->lock);
-        wait_sync_update(ret);
-        OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, ret, REQUEST_COMPLETED);
-        OPAL_THREAD_UNLOCK(ret->lock);
-    }
-    
-    ompi_request_complete_fn_t tmp = request->req_complete_cb;
-    if( NULL != tmp ){
-            request->req_complete_cb = NULL;
-            tmp( request );
-    }
 
+    ompi_request_complete_fn_t tmp = request->req_complete_cb;
+
+    if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)) {
+        wait_sync_update(request->req_complete);
+        OPAL_ATOMIC_SWP_PTR(&request->req_complete, REQUEST_COMPLETED);
+    }
+    
     if( OPAL_UNLIKELY(MPI_SUCCESS != request->req_status.MPI_ERROR) ) {
         ompi_request_failed++;
     }
 
-    
+    if( NULL != tmp ) {
+        request->req_complete_cb = NULL;
+        tmp( request );
+    }
+
     return OMPI_SUCCESS;
 }
 
