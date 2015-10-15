@@ -96,7 +96,7 @@ int ompi_request_default_wait_any(
     WAIT_SYNC_INIT(&sync,1);
 
     /* give up and sleep until completion */
-    OPAL_THREAD_LOCK(sync.lock);
+    OPAL_THREAD_LOCK(&sync.lock);
     
     rptr = requests;
     num_requests_null_inactive = 0;
@@ -126,7 +126,7 @@ int ompi_request_default_wait_any(
         opal_condition_wait(&ompi_request_cond, &ompi_request_lock);
     }
     
-    OPAL_THREAD_UNLOCK(sync.lock);
+    OPAL_THREAD_UNLOCK(&sync.lock);
 
     /* recheck the complete status and clean up the sync primitives */
     rptr = requests;
@@ -232,9 +232,9 @@ int ompi_request_default_wait_all( size_t count,
          * not completed pend on condition variable until a request
          * completes
          */
-        OPAL_THREAD_LOCK(sync.lock);
-        opal_condition_wait(sync.condition, sync.lock);
-        OPAL_THREAD_UNLOCK(sync.lock);
+        OPAL_THREAD_LOCK(&sync.lock);
+        opal_condition_wait(&sync.condition, &sync.lock);
+        OPAL_THREAD_UNLOCK(&sync.lock);
     }
 
 #if OPAL_ENABLE_FT_CR == 1
@@ -392,7 +392,7 @@ int ompi_request_default_wait_some(
      * We only get here when outcount still is 0.
      * give up and sleep until completion
      */
-    OPAL_THREAD_LOCK(sync.lock);
+    OPAL_THREAD_LOCK(&sync.lock);
     rptr = requests;
     num_requests_null_inactive = 0;
     num_requests_done = 0;
@@ -415,9 +415,9 @@ int ompi_request_default_wait_some(
         }
     }
     if(sync.count > 0){
-        opal_condition_wait(sync.condition,sync.lock);
+        opal_condition_wait(&sync.condition,&sync.lock);
     }
-    OPAL_THREAD_UNLOCK(sync.lock);
+    OPAL_THREAD_UNLOCK(&sync.lock);
 
 #if OPAL_ENABLE_PROGRESS_THREADS
 finished:
