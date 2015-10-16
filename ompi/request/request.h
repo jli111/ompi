@@ -119,8 +119,6 @@ struct ompi_request_t {
  */
 typedef struct ompi_request_t ompi_request_t;
 
-#define REQUEST_COMPLETED (void*)1L
-#define REQUEST_PENDING   (void*)0L
 
 /**
  * Padded struct to maintain back compatibiltiy.
@@ -411,12 +409,12 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
 
     ompi_request_complete_fn_t tmp = request->req_complete_cb;
 
-    if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)) {
+    if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)){
         wait_sync_update(request->req_complete);
         OPAL_ATOMIC_SWP_PTR(&request->req_complete, REQUEST_COMPLETED);
     }
     
-    if( OPAL_UNLIKELY(MPI_SUCCESS != request->req_status.MPI_ERROR) ) {
+    if( OPAL_UNLIKELY(MPI_SUCCESS != request->req_status.MPI_ERROR) ){
         ompi_request_failed++;
     }
 
