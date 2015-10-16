@@ -13,6 +13,9 @@ struct ompi_wait_sync_t {
 
 typedef struct ompi_wait_sync_t ompi_wait_sync_t;
 
+#define REQUEST_PENDING        (void*)0L
+#define REQUEST_COMPLETED      (void*)1L
+
 #define WAIT_SYNC_INIT(sync,c)                        \
     do {                                              \
        (sync)->count = c;                             \
@@ -27,18 +30,20 @@ typedef struct ompi_wait_sync_t ompi_wait_sync_t;
     } while(0);
 
 #if OPAL_ENABLE_PROGRESS_THREADS
-#define OPAL_ATOMIC_ADD_32(a,b)         opal_atomic_add_32(a,b);     
-#define OPAL_ATOMIC_SWP_PTR(a,b)        opal_atomic_swap_ptr(a,b);              
+#define OPAL_ATOMIC_ADD_32(a,b)         opal_atomic_add_32(a,b)   
+#define OPAL_ATOMIC_SWP_PTR(a,b)        opal_atomic_swap_ptr(a,b)              
 #else
-#define OPAL_ATOMIC_ADD_32(a,b)         (*a += b);
-#define OPAL_ATOMIC_SWP_PTR(a,b)        (*a) = b;         
+#define OPAL_ATOMIC_ADD_32(a,b)         (*a += b)
+#define OPAL_ATOMIC_SWP_PTR(a,b)        (*a) = b         
 #endif
 
 static inline void wait_sync_update(ompi_wait_sync_t *sync){
+    
 
-    assert(sync != NULL);
-    if(OPAL_ATOMIC_ADD_32(&sync->count,-1) <= 0){
+    assert(REQUEST_PENDING != sync); 
+    if((OPAL_ATOMIC_ADD_32(&sync->count,-1)) <= 0){
       opal_condition_signal(&sync->condition);
+    }
 }
 
 
