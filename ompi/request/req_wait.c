@@ -263,7 +263,12 @@ int ompi_request_default_wait_all( size_t count,
              * Since some may still be pending.
              */
             if( 0 >= failed ) {
-                assert( REQUEST_COMPLETED == request->req_complete );
+                //assert( REQUEST_COMPLETED == request->req_complete );
+                if( REQUEST_COMPLETED != request->req_complete ){
+                   printf("PID = %d\n",getpid());
+                   sleep(300);
+
+                }
             }
 
             if( request->req_state == OMPI_REQUEST_INACTIVE ) {

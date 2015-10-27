@@ -142,11 +142,11 @@ typedef struct ompi_predefined_request_t ompi_predefined_request_t;
  */
 #define OMPI_REQUEST_INIT(request, persistent)        \
     do {                                              \
-        (request)->req_complete = 0x0e;              \
+        (request)->req_complete = REQUEST_PENDING;    \
         (request)->req_state = OMPI_REQUEST_INACTIVE; \
         (request)->req_persistent = (persistent);     \
-        (request)->req_complete_cb  = 0x0;            \
-        (request)->req_complete_cb_data = 0x0;        \
+        (request)->req_complete_cb  = NULL;           \
+        (request)->req_complete_cb_data = NULL;       \
     } while (0);
 
 /**
@@ -373,7 +373,7 @@ static inline int ompi_request_free(ompi_request_t** request)
  * Wait a particular request for completion
  */
 
-#if OPAL_ENABLE_PROGRESS_THREADS
+#if OPAL_ENABLE_MULTI_THREADS
 static inline void ompi_request_wait_completion(ompi_request_t *req)
 {
     ompi_wait_sync_t sync;
@@ -382,7 +382,9 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
     OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync);
 
     if(req->req_complete != REQUEST_COMPLETED){
+        OPAL_THREAD_LOCK(&sync.lock);
         opal_condition_wait(&sync.condition, &sync.lock);
+        OPAL_THREAD_UNLOCK(&sync.lock);
     }
     WAIT_SYNC_RELEASE(&sync);
 
@@ -411,7 +413,7 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
 
     if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)){
         ompi_wait_sync_t *tmp_sync = (ompi_wait_sync_t*) request->req_complete;
-        OPAL_ATOMIC_SWP_PTR(&request->req_complete, REQUEST_COMPLETED);
+        (void) OPAL_ATOMIC_SWP_PTR(&request->req_complete, REQUEST_COMPLETED);
         wait_sync_update(tmp_sync);
     }
     
