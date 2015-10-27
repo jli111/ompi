@@ -29,7 +29,7 @@ typedef struct ompi_wait_sync_t ompi_wait_sync_t;
        OBJ_DESTRUCT( &((sync)->lock ));                   \
     } while(0);
 
-#if OPAL_ENABLE_PROGRESS_THREADS
+#if OPAL_ENABLE_MULTI_THREADS
 #define OPAL_ATOMIC_ADD_32(a,b)         opal_atomic_add_32(a,b)   
 #define OPAL_ATOMIC_SWP_PTR(a,b)        opal_atomic_swap_ptr(a,b)              
 #else
@@ -40,9 +40,11 @@ typedef struct ompi_wait_sync_t ompi_wait_sync_t;
 static inline void wait_sync_update(ompi_wait_sync_t *sync){
     
 
-    assert(REQUEST_PENDING != sync); 
+    assert(REQUEST_COMPLETED != sync); 
     if((OPAL_ATOMIC_ADD_32(&sync->count,-1)) <= 0){
+      OPAL_THREAD_LOCK(&sync->lock);
       opal_condition_signal(&sync->condition);
+      OPAL_THREAD_UNLOCK(&sync->lock);
     }
 }
 

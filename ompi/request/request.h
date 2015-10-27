@@ -103,7 +103,7 @@ struct ompi_request_t {
     opal_free_list_item_t super;                /**< Base type */
     ompi_request_type_t req_type;               /**< Enum indicating the type of the request */
     ompi_status_public_t req_status;            /**< Completion status */
-    void *req_complete;                         /**< Flag indicating wether request has completed */
+    volatile void *req_complete;                         /**< Flag indicating wether request has completed */
     volatile ompi_request_state_t req_state;    /**< enum indicate state of the request */
     bool req_persistent;                        /**< flag indicating if the this is a persistent request */
     int req_f_to_c_index;                       /**< Index in Fortran <-> C translation array */
@@ -410,8 +410,9 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
     ompi_request_complete_fn_t tmp = request->req_complete_cb;
 
     if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)){
-        wait_sync_update(request->req_complete);
+        ompi_wait_sync_t *tmp_sync = (ompi_wait_sync_t*) request->req_complete;
         OPAL_ATOMIC_SWP_PTR(&request->req_complete, REQUEST_COMPLETED);
+        wait_sync_update(tmp_sync);
     }
     
     if( OPAL_UNLIKELY(MPI_SUCCESS != request->req_status.MPI_ERROR) ){
