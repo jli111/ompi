@@ -226,17 +226,19 @@ int ompi_request_default_wait_all( size_t count,
     /* if all requests have not completed -- defer acquiring lock
      * unless required
      */
-    if (sync.count > 0) {
         /*
          * acquire lock and test for completion - if all requests are
          * not completed pend on condition variable until a request
          * completes
          */
-        OPAL_THREAD_LOCK(&sync.lock);
+    OPAL_THREAD_LOCK(&sync.lock);
+    if (sync.count > 0) {
         opal_condition_wait(&sync.condition, &sync.lock);
         OPAL_THREAD_UNLOCK(&sync.lock);
     }
-
+    else{
+        OPAL_THREAD_UNLOCK(&sync.lock);
+    }
 #if OPAL_ENABLE_FT_CR == 1
     if( opal_cr_is_enabled) {
         rptr = requests;
