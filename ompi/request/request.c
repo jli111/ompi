@@ -176,6 +176,8 @@ int ompi_request_init(void)
     ompi_status_empty._ucount = 0;
     ompi_status_empty._cancelled = 0;
 
+    wait_sync_startup(); 
+
     return OMPI_SUCCESS;
 }
 
