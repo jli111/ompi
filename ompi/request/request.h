@@ -382,9 +382,7 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
     OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync);
 
     if(req->req_complete != REQUEST_COMPLETED){
-        OPAL_THREAD_LOCK(&sync.lock);
-        opal_condition_wait(&sync.condition, &sync.lock);
-        OPAL_THREAD_UNLOCK(&sync.lock);
+         sync_wait(&sync);   
     }
     WAIT_SYNC_RELEASE(&sync);
 
