@@ -175,7 +175,7 @@ recv_request_pml_complete(mca_pml_ob1_recv_request_t *recvreq)
     }
     recvreq->req_rdma_cnt = 0;
 
-    OPAL_THREAD_LOCK(&ompi_request_lock);
+    //OPAL_THREAD_LOCK(&ompi_request_lock);
     if(true == recvreq->req_recv.req_base.req_free_called) {
         if( MPI_SUCCESS != recvreq->req_recv.req_base.req_ompi.req_status.MPI_ERROR ) {
             ompi_mpi_abort(&ompi_mpi_comm_world.comm, MPI_ERR_REQUEST);
@@ -183,6 +183,9 @@ recv_request_pml_complete(mca_pml_ob1_recv_request_t *recvreq)
         MCA_PML_OB1_RECV_REQUEST_RETURN(recvreq);
     } else {
         /* initialize request status */
+#if OPAL_ENABLE_MULTI_THREADS
+    opal_atomic_wmb();
+#endif
         recvreq->req_recv.req_base.req_pml_complete = true;
         recvreq->req_recv.req_base.req_ompi.req_status._ucount =
             recvreq->req_bytes_received;
@@ -198,7 +201,7 @@ recv_request_pml_complete(mca_pml_ob1_recv_request_t *recvreq)
         }
         MCA_PML_OB1_RECV_REQUEST_MPI_COMPLETE(recvreq);
     }
-    OPAL_THREAD_UNLOCK(&ompi_request_lock);
+    //OPAL_THREAD_UNLOCK(&ompi_request_lock);
 }
 
 static inline bool

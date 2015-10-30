@@ -271,6 +271,9 @@ send_request_pml_complete(mca_pml_ob1_send_request_t *sendreq)
             ompi_mpi_abort(&ompi_mpi_comm_world.comm, MPI_ERR_REQUEST);
         }
     }
+#if OPAL_ENABLE_MULTI_THREADS
+    opal_atomic_wmb();
+#endif
     sendreq->req_send.req_base.req_pml_complete = true;
 
     if(sendreq->req_send.req_base.req_free_called) {
