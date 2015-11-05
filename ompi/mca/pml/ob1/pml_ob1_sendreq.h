@@ -275,7 +275,6 @@ send_request_pml_complete(mca_pml_ob1_send_request_t *sendreq)
     opal_atomic_wmb();
 #endif
     sendreq->req_send.req_base.req_pml_complete = true;
-
     if(sendreq->req_send.req_base.req_free_called) {
         MCA_PML_OB1_SEND_REQUEST_RETURN(sendreq);
     }
