@@ -34,4 +34,5 @@ headers += \
 lib@OPAL_LIB_PREFIX@open_pal_la_SOURCES += \
         threads/condition.c \
         threads/mutex.c \
-        threads/thread.c
+        threads/thread.c \
+	threads/wait_sync.c
