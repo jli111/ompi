@@ -379,17 +379,17 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
     ompi_wait_sync_t sync;
     WAIT_SYNC_INIT(&sync,1); 
 
-    OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync);
-
-    if(req->req_complete != REQUEST_COMPLETED){
+    if(OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync)) {
         sync_wait(&sync);   
     }
+
+    assert(REQUEST_COMPLETED == req->req_complete);
     WAIT_SYNC_RELEASE(&sync);
 }
 #else
 static inline void ompi_request_wait_completion(ompi_request_t *req)
 {
-    while(REQUEST_PENDING == req->req_complete){
+    while(REQUEST_PENDING == req->req_complete) {
         opal_progress();
     }
 }
@@ -408,8 +408,8 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
     ompi_request_complete_fn_t tmp = request->req_complete_cb;
 
     if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)) {
-        ompi_wait_sync_t *tmp_sync = (ompi_wait_sync_t*) request->req_complete;
-        (void) OPAL_ATOMIC_SWP_PTR(&request->req_complete, REQUEST_COMPLETED);
+        ompi_wait_sync_t *tmp_sync = OPAL_ATOMIC_SWP_PTR(&request->req_complete,
+                                                         REQUEST_COMPLETED);
         wait_sync_update(tmp_sync);
     }
     
