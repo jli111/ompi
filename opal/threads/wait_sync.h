@@ -55,8 +55,10 @@ OPAL_DECLSPEC int sync_wait(ompi_wait_sync_t *sync);
 static inline void wait_sync_update(ompi_wait_sync_t *sync)
 {
     assert(REQUEST_COMPLETED != sync); 
-    if( (OPAL_ATOMIC_ADD_32(&sync->count,-1)) <= 0) {
+    if( (OPAL_ATOMIC_ADD_32(&sync->count,-1)) == 0) {
+        pthread_mutex_lock(&(sync->lock));
         pthread_cond_signal(&sync->condition);
+        pthread_mutex_unlock(&(sync->lock));
     }
 }
 

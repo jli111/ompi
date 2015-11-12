@@ -205,13 +205,12 @@ int ompi_request_default_wait_all( size_t count,
     for (i = 0; i < count; i++) {
         request = *rptr++;
 
-        OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, &sync);
         
-
-        if (request->req_complete == REQUEST_COMPLETED) {
+        if (!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, &sync)) {
             if( OPAL_UNLIKELY( MPI_SUCCESS != request->req_status.MPI_ERROR ) ) {
                 failed++;
             }
+            assert(request->req_complete == REQUEST_COMPLETED);
             completed++;
             wait_sync_update(&sync);
         }
