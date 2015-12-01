@@ -196,9 +196,6 @@ int ompi_request_default_wait_all( size_t count,
     int mpi_error = OMPI_SUCCESS;
     ompi_wait_sync_t sync;
 
-
-    WAIT_SYNC_INIT(&sync,count);
-
     rptr = requests;
     for (i = 0; i < count; i++) {
         request = *rptr++;
@@ -208,12 +205,11 @@ int ompi_request_default_wait_all( size_t count,
             if( OPAL_UNLIKELY( MPI_SUCCESS != request->req_status.MPI_ERROR ) ) {
                 failed++;
             }
-            assert(request->req_complete == REQUEST_COMPLETED);
             completed++;
-            wait_sync_update(&sync);
         }
     }
 
+    WAIT_SYNC_INIT(&sync,count-completed);
     if( failed > 0 ) {
         goto finish;
     }
@@ -312,7 +308,7 @@ int ompi_request_default_wait_all( size_t count,
                 /* If the request is still pending due to a failed request
                  * then skip it in this loop.
                  */
-                if( !request->req_complete ) {
+                if( request->req_complete != REQUEST_COMPLETED ) {
                     continue;
                 }
             }
