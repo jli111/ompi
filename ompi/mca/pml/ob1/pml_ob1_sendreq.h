@@ -275,9 +275,12 @@ send_request_pml_complete(mca_pml_ob1_send_request_t *sendreq)
             ompi_mpi_abort(&ompi_mpi_comm_world.comm, MPI_ERR_REQUEST);
         }
     }
-
+#if OPAL_ENABLE_MULTI_THREADS
     if(opal_atomic_cmpset_32(&sendreq->req_send.req_base.req_free_called,
                              0, 1)){
+#else
+    if(sendreq->req_send.req_base.req_free_called == true){
+#endif
         MCA_PML_OB1_SEND_REQUEST_RETURN(sendreq);
     }
 }
