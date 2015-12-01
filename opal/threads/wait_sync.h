@@ -33,19 +33,31 @@ typedef struct ompi_wait_sync_t {
 #define SYNC_WAIT(sync)                 sync_wait_mt(sync)              
 #define PTHREAD_COND_INIT(a,b)          pthread_cond_init(a,b)
 #define PTHREAD_MUTEX_INIT(a,b)         pthread_mutex_init(a,b)
+
 #define WAIT_SYNC_RELEASE(sync)                       \
     do {                                              \
        pthread_cond_destroy(&(sync)->condition);      \
        pthread_mutex_destroy(&(sync)->lock);          \
     } while(0)
+
+#define WAIT_SYNC_SIGNAL(sync)                        \
+    do {                                              \
+        pthread_mutex_lock(&(sync->lock));            \
+        pthread_cond_signal(&sync->condition);        \
+        pthread_mutex_unlock(&(sync->lock));          \
+    } while(0)
+ 
 #else
+
 #define OPAL_ATOMIC_ADD_32(a,b)         (*(a) += (b))
 #define OPAL_ATOMIC_SWP_PTR(a,b)        *(a) = (b)
 #define PTHREAD_COND_INIT(a,b)          
 #define PTHREAD_MUTEX_INIT(a,b)         
 #define SYNC_WAIT(sync)                 sync_wait_st(sync)     
-#define WAIT_SYNC_RELEASE(sync)         
-#endif
+#define WAIT_SYNC_RELEASE(sync)
+#define WAIT_SYNC_SIGNAL(sync)          
+
+#endif /* OPAL_ENABLE_MULTI_THREADS */
 
 OPAL_DECLSPEC int sync_wait_mt(ompi_wait_sync_t *sync);
 OPAL_DECLSPEC int sync_wait_st(ompi_wait_sync_t *sync);
@@ -59,16 +71,12 @@ OPAL_DECLSPEC int sync_wait_st(ompi_wait_sync_t *sync);
        PTHREAD_MUTEX_INIT(&(sync)->lock,NULL);        \
     } while(0)
 
-
-
 static inline void wait_sync_update(ompi_wait_sync_t *sync)
 {
     assert(REQUEST_COMPLETED != sync); 
     if( (OPAL_ATOMIC_ADD_32(&sync->count,-1)) == 0) {
-        pthread_mutex_lock(&(sync->lock));
-        pthread_cond_signal(&sync->condition);
-        pthread_mutex_unlock(&(sync->lock));
-    }
+        WAIT_SYNC_SIGNAL(sync);
+   }
 }
 
 END_C_DECLS
