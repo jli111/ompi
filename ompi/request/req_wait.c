@@ -121,9 +121,7 @@ int ompi_request_default_wait_any(
             break;
         }
     }
-    if( sync.count > 0) {
-        sync_wait(&sync);
-    }
+    SYNC_WAIT(&sync);
     
 
     /* recheck the complete status and clean up the sync primitives */
@@ -228,9 +226,7 @@ int ompi_request_default_wait_all( size_t count,
          * not completed pend on condition variable until a request
          * completes
          */
-    if (sync.count > 0) {
-        sync_wait(&sync);
-    }
+    SYNC_WAIT(&sync);
 #if OPAL_ENABLE_FT_CR == 1
     if( opal_cr_is_enabled) {
         rptr = requests;
@@ -407,9 +403,7 @@ int ompi_request_default_wait_some(
             wait_sync_update(&sync);
         }
     }
-    if(sync.count > 0){
-        sync_wait(&sync);
-    }
+    SYNC_WAIT(&sync);
 
 #if OPAL_ENABLE_PROGRESS_THREADS
 finished:

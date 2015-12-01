@@ -99,7 +99,7 @@ static int mca_pml_ob1_send_request_free(struct ompi_request_t** request)
 {
     mca_pml_ob1_send_request_t* sendreq = *(mca_pml_ob1_send_request_t**)request;
 #if OPAL_ENABLE_MULTI_THREADS
-    if(!OPAL_ATOMIC_CMPSET_32(&sendreq->req_send.req_base.req_free_called,
+    if(!opal_atomic_cmpset_32(&sendreq->req_send.req_base.req_free_called,
                              0, 1))
         goto done;
 #else

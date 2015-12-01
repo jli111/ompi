@@ -21,8 +21,19 @@ static ompi_wait_sync_t* wait_sync_list = NULL;
 	pthread_mutex_unlock( &(who)->lock);           \
     } while(0)
 
-int sync_wait(ompi_wait_sync_t *sync)
+
+int sync_wait_st(ompi_wait_sync_t *sync){
+
+    while(sync->count > 0){
+        opal_progress();
+    } 
+    return OPAL_SUCCESS;
+}
+
+int sync_wait_mt(ompi_wait_sync_t *sync)
 {
+    if(sync->count <= 0)
+        return OPAL_SUCCESS;
     /* lock so nobody can signal us during the list updating */
     pthread_mutex_lock(&sync->lock);   
 

@@ -26,31 +26,40 @@ typedef struct ompi_wait_sync_t {
 #define REQUEST_PENDING        (void*)0L
 #define REQUEST_COMPLETED      (void*)1L
 
+#if OPAL_ENABLE_MULTI_THREADS
+
+#define OPAL_ATOMIC_ADD_32(a,b)         opal_atomic_add_32(a,b)   
+#define OPAL_ATOMIC_SWP_PTR(a,b)        opal_atomic_swap_ptr(a,b)
+#define SYNC_WAIT(sync)                 sync_wait_mt(sync)              
+#define PTHREAD_COND_INIT(a,b)          pthread_cond_init(a,b)
+#define PTHREAD_MUTEX_INIT(a,b)         pthread_mutex_init(a,b)
+#define WAIT_SYNC_RELEASE(sync)                       \
+    do {                                              \
+       pthread_cond_destroy(&(sync)->condition);      \
+       pthread_mutex_destroy(&(sync)->lock);          \
+    } while(0)
+#else
+#define OPAL_ATOMIC_ADD_32(a,b)         (*(a) += (b))
+#define OPAL_ATOMIC_SWP_PTR(a,b)        *(a) = (b)
+#define PTHREAD_COND_INIT(a,b)          
+#define PTHREAD_MUTEX_INIT(a,b)         
+#define SYNC_WAIT(sync)                 sync_wait_st(sync)     
+#define WAIT_SYNC_RELEASE(sync)         
+#endif
+
+OPAL_DECLSPEC int sync_wait_mt(ompi_wait_sync_t *sync);
+OPAL_DECLSPEC int sync_wait_st(ompi_wait_sync_t *sync);
+
 #define WAIT_SYNC_INIT(sync,c)                        \
     do {                                              \
        (sync)->count = c;                             \
        (sync)->next = NULL;                           \
        (sync)->prev = NULL;                           \
-       pthread_cond_init(&(sync)->condition,NULL);    \
-       pthread_mutex_init(&(sync)->lock,NULL);        \
+       PTHREAD_COND_INIT(&(sync)->condition,NULL);    \
+       PTHREAD_MUTEX_INIT(&(sync)->lock,NULL);        \
     } while(0)
 
-#define WAIT_SYNC_RELEASE(sync)                       \
-    do {                                              \
-       pthread_cond_destroy(&(sync)->condition);      \
-       pthread_mutex_destroy(&(sync)->lock);          \
-    } while(0);
 
-#if OPAL_ENABLE_MULTI_THREADS
-#define OPAL_ATOMIC_ADD_32(a,b)         opal_atomic_add_32(a,b)   
-#define OPAL_ATOMIC_SWP_PTR(a,b)        opal_atomic_swap_ptr(a,b)
-              
-#else
-#define OPAL_ATOMIC_ADD_32(a,b)         (*(a) += (b))
-#define OPAL_ATOMIC_SWP_PTR(a,b)        *(a) = (b)
-#endif
-
-OPAL_DECLSPEC int sync_wait(ompi_wait_sync_t *sync);
 
 static inline void wait_sync_update(ompi_wait_sync_t *sync)
 {

@@ -380,7 +380,7 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
     WAIT_SYNC_INIT(&sync,1); 
 
     if(OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync)) {
-        sync_wait(&sync);   
+        SYNC_WAIT(&sync);   
     }
 
     assert(REQUEST_COMPLETED == req->req_complete);
