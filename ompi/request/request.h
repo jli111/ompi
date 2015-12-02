@@ -389,7 +389,7 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
 #else
 static inline void ompi_request_wait_completion(ompi_request_t *req)
 {
-    while(REQUEST_PENDING == req->req_complete) {
+    while(REQUEST_COMPLETED != req->req_complete) {
         opal_progress();
     }
 }

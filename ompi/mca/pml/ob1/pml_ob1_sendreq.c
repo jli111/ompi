@@ -448,9 +448,7 @@ int mca_pml_ob1_send_request_start_buffered(
     sendreq->req_state = 2;
 
     /* request is complete at mpi level */
-    //OPAL_THREAD_LOCK(&ompi_request_lock);
     MCA_PML_OB1_SEND_REQUEST_MPI_COMPLETE(sendreq, true);
-    //OPAL_THREAD_UNLOCK(&ompi_request_lock);
 
     /* send */
     rc = mca_bml_base_send(bml_btl, des, MCA_PML_OB1_HDR_TYPE_RNDV);

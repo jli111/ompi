@@ -122,14 +122,12 @@ static int mca_pml_ob1_recv_request_cancel(struct ompi_request_t* ompi_request, 
     request->req_recv.req_base.req_pml_complete = true;
     OPAL_THREAD_UNLOCK(&ob1_comm->matching_lock);
 
-    //OPAL_THREAD_LOCK(&ompi_request_lock);
     ompi_request->req_status._cancelled = true;
     /* This macro will set the req_complete to true so the MPI Test/Wait* functions
      * on this request will be able to complete. As the status is marked as
      * cancelled the cancel state will be detected.
      */
     MCA_PML_OB1_RECV_REQUEST_MPI_COMPLETE(request);
-    //OPAL_THREAD_UNLOCK(&ompi_request_lock);
     /*
      * Receive request cancelled, make user buffer accessible.
      */

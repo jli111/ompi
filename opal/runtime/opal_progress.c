@@ -35,6 +35,7 @@
 #include "opal/mca/timer/base/base.h"
 #include "opal/util/output.h"
 #include "opal/runtime/opal_params.h"
+
 #define OPAL_PROGRESS_USE_TIMERS (OPAL_TIMER_CYCLE_SUPPORTED || OPAL_TIMER_USEC_SUPPORTED)
 
 #if OPAL_ENABLE_DEBUG
@@ -46,6 +47,7 @@ bool opal_progress_debug = false;
  */
 static int opal_progress_event_flag = OPAL_EVLOOP_ONCE | OPAL_EVLOOP_NONBLOCK;
 int opal_progress_spin_count = 10000;
+
 
 /*
  * Local variables
@@ -151,6 +153,7 @@ opal_progress(void)
 {
     size_t i;
     int events = 0;
+
     if( opal_progress_event_flag != 0 ) {
 #if OPAL_HAVE_WORKING_EVENTOPS
 #if OPAL_PROGRESS_USE_TIMERS
