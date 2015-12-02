@@ -21,6 +21,7 @@ typedef struct ompi_wait_sync_t {
     pthread_mutex_t lock;
     struct ompi_wait_sync_t *next;
     struct ompi_wait_sync_t *prev;
+    int status;
 } ompi_wait_sync_t;
 
 #define REQUEST_PENDING        (void*)0L
@@ -67,16 +68,24 @@ OPAL_DECLSPEC int sync_wait_st(ompi_wait_sync_t *sync);
        (sync)->count = c;                             \
        (sync)->next = NULL;                           \
        (sync)->prev = NULL;                           \
+       (sync)->status = 0;                            \
        PTHREAD_COND_INIT(&(sync)->condition,NULL);    \
        PTHREAD_MUTEX_INIT(&(sync)->lock,NULL);        \
     } while(0)
 
-static inline void wait_sync_update(ompi_wait_sync_t *sync)
+static inline void wait_sync_update(ompi_wait_sync_t *sync,int req_status)
 {
-    assert(REQUEST_COMPLETED != sync); 
-    if( (OPAL_ATOMIC_ADD_32(&sync->count,-1)) == 0) {
-        WAIT_SYNC_SIGNAL(sync);
-   }
+    if(req_status != OPAL_SUCCESS){
+        OPAL_ATOMIC_CMPSET_32(&(sync->count),0,0);
+        sync->status = -1;
+        WAIT_SYNC_SIGNAL(sync);       
+
+    } 
+    else{  
+        if( (OPAL_ATOMIC_ADD_32(&sync->count,-1)) == 0) {
+            WAIT_SYNC_SIGNAL(sync);
+        }
+    }
 }
 
 END_C_DECLS

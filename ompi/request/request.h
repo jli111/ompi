@@ -412,7 +412,7 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
     if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)) {
         ompi_wait_sync_t *tmp_sync = OPAL_ATOMIC_SWP_PTR(&request->req_complete,
                                                          REQUEST_COMPLETED);
-        wait_sync_update(tmp_sync);
+        wait_sync_update(tmp_sync,request->req_status.MPI_ERROR);
     }
     
     if( OPAL_UNLIKELY(MPI_SUCCESS != request->req_status.MPI_ERROR) ) {

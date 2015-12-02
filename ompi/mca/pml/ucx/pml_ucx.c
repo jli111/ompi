@@ -402,7 +402,7 @@ mca_pml_ucx_blocking_recv_completion(void *request, ucs_status_t status,
 
     OPAL_THREAD_LOCK(&ompi_request_lock);
     mca_pml_ucx_set_recv_status(&req->req_status, status, info);
-    PML_UCX_ASSERT(!(REQUEST_COMPLETED == req->req_complete));
+    PML_UCX_ASSERT( !(REQUEST_COMPLETE(req) );
     req->req_complete = REQUEST_COMPLETED;
     OPAL_THREAD_UNLOCK(&ompi_request_lock);
 }
@@ -427,7 +427,7 @@ int mca_pml_ucx_recv(void *buf, size_t count, ompi_datatype_t *datatype, int src
     }
 
     ucp_worker_progress(ompi_pml_ucx.ucp_worker);
-    while (REQUEST_COMPLETED != req->req_complete) {
+    while ( !REQUEST_COMPLETE(req) ) {
         opal_progress();
     }
 
@@ -750,7 +750,7 @@ int mca_pml_ucx_start(size_t count, ompi_request_t** requests)
             OPAL_THREAD_UNLOCK(&ompi_request_lock);
         } else if (!UCS_PTR_IS_ERR(tmp_req)) {
             OPAL_THREAD_LOCK(&ompi_request_lock);
-            if (tmp_req->req_complete == REQUEST_COMPLETED) {
+            if (REQUEST_COMPLETE(tmp_req)) {
                 /* tmp_req is already completed */
                 PML_UCX_VERBOSE(8, "completing persistent request %p", (void*)preq);
                 mca_pml_ucx_persistent_request_complete(preq, tmp_req);

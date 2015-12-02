@@ -88,8 +88,7 @@ int ompi_request_default_wait_any(
 {
     size_t i=0, num_requests_null_inactive=0;
     int rc = OMPI_SUCCESS;
-    int completed = -1;
-    int found = 0;
+    int completed = count;
     ompi_request_t **rptr=NULL;
     ompi_request_t *request=NULL;
     ompi_wait_sync_t sync;
@@ -118,8 +117,8 @@ int ompi_request_default_wait_any(
         }
         OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED);
         if ( REQUEST_COMPLETE(request) ) {
-            wait_sync_update(&sync);
-            found = i;
+            wait_sync_update(&sync,request->req_status.MPI_ERROR);
+            completed = i;
             break;
         }
     }
@@ -129,7 +128,7 @@ int ompi_request_default_wait_any(
     /* recheck the complete status and clean up the sync primitives */
     rptr = requests;
     num_requests_null_inactive = 0;
-    for(i = 0; i < found; i++, rptr++) {
+    for(i = 0; i < completed; i++, rptr++) {
         if( request->req_state == OMPI_REQUEST_INACTIVE ) {
             num_requests_null_inactive++;
             continue;
@@ -398,7 +397,7 @@ int ompi_request_default_wait_some(
         if( REQUEST_COMPLETE(request) ) {
             indices[i] = 1;
             num_requests_done++;
-            wait_sync_update(&sync);
+            wait_sync_update(&sync,request->req_status.MPI_ERROR);
         }
     }
     SYNC_WAIT(&sync);
