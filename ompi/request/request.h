@@ -149,6 +149,8 @@ typedef struct ompi_predefined_request_t ompi_predefined_request_t;
         (request)->req_complete_cb_data = NULL;       \
     } while (0);
 
+
+#define REQUEST_COMPLETE(req)        REQUEST_COMPLETED == (req)->req_complete
 /**
  * Finalize a request.  This is a macro to avoid function call
  * overhead, since this is typically invoked in the critical
@@ -383,13 +385,13 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
         SYNC_WAIT(&sync);   
     }
 
-    assert(REQUEST_COMPLETED == req->req_complete);
+    assert(REQUEST_COMPLETE(req));
     WAIT_SYNC_RELEASE(&sync);
 }
 #else
 static inline void ompi_request_wait_completion(ompi_request_t *req)
 {
-    while(REQUEST_COMPLETED != req->req_complete) {
+    while(!REQUEST_COMPLETE(req)) {
         opal_progress();
     }
 }
