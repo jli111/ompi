@@ -279,7 +279,7 @@ send_request_pml_complete(mca_pml_ob1_send_request_t *sendreq)
     if(opal_atomic_cmpset_32(&sendreq->req_send.req_base.req_free_called,
                              0, 1)){
 #else
-    if(sendreq->req_send.req_base.req_free_called == true){
+    if(sendreq->req_send.req_base.req_free_called == 1){
 #endif
         MCA_PML_OB1_SEND_REQUEST_RETURN(sendreq);
     }
