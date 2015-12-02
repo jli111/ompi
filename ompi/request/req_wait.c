@@ -129,6 +129,8 @@ int ompi_request_default_wait_any(
     rptr = requests;
     num_requests_null_inactive = 0;
     for(i = 0; i < completed; i++, rptr++) {
+        request = *rptr;
+
         if( request->req_state == OMPI_REQUEST_INACTIVE ) {
             num_requests_null_inactive++;
             continue;
