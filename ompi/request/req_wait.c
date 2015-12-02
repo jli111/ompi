@@ -117,7 +117,7 @@ int ompi_request_default_wait_any(
             continue;
         }
         OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED);
-        if (request->req_complete == REQUEST_COMPLETED) {
+        if ( REQUEST_COMPLETE(request) ) {
             wait_sync_update(&sync);
             found = i;
             break;
@@ -135,7 +135,7 @@ int ompi_request_default_wait_any(
             continue;
         }
         OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, &sync, REQUEST_PENDING);
-        if (request->req_complete == REQUEST_COMPLETED) {
+        if ( REQUEST_COMPLETE(request) ) {
             completed = i;
         }
     }
@@ -146,7 +146,7 @@ int ompi_request_default_wait_any(
             *status = ompi_status_empty;
         }
     } else {
-        assert( REQUEST_COMPLETED == request->req_complete );
+        assert( REQUEST_COMPLETE(request) );
         /* Per note above, we have to call gen request query_fn even
            if STATUS_IGNORE was provided */
         if (OMPI_REQUEST_GEN == request->req_type) {
@@ -177,7 +177,7 @@ int ompi_request_default_wait_any(
         rptr = requests;
         for (i = 0; i < count; i++, rptr++) {
             request = *rptr;
-            if( REQUEST_COMPLETED == request->req_complete) {
+            if( REQUEST_COMPLETE(request) ) {
                 OMPI_CRCP_REQUEST_COMPLETE(request);
             }
         }
@@ -230,7 +230,7 @@ int ompi_request_default_wait_all( size_t count,
         rptr = requests;
         for (i = 0; i < count; i++, rptr++) {
             request = *rptr;
-            if( REQUEST_COMPLETED == request->req_complete) {
+            if( REQUEST_COMPLETE(request) ) {
                 OMPI_CRCP_REQUEST_COMPLETE(request);
             }
         }
@@ -249,7 +249,7 @@ int ompi_request_default_wait_all( size_t count,
              * Since some may still be pending.
              */
             if( 0 >= failed ) {
-                assert( REQUEST_COMPLETED == request->req_complete );
+                assert( REQUEST_COMPLETE(request) );
             }
 
             if( request->req_state == OMPI_REQUEST_INACTIVE ) {
@@ -305,12 +305,12 @@ int ompi_request_default_wait_all( size_t count,
              * Since some may still be pending.
              */
             if( 0 >= failed ) {
-                assert( REQUEST_COMPLETED == request->req_complete );
+                assert( REQUEST_COMPLETE(request) );
             } else {
                 /* If the request is still pending due to a failed request
                  * then skip it in this loop.
                  */
-                if( request->req_complete != REQUEST_COMPLETED ) {
+                if( !REQUEST_COMPLETE(request) ) {
                     continue;
                 }
             }
@@ -395,7 +395,7 @@ int ompi_request_default_wait_some(
         }
 
         OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, &sync);
-        if(request->req_complete == REQUEST_COMPLETED) {
+        if( REQUEST_COMPLETE(request) ) {
             indices[i] = 1;
             num_requests_done++;
             wait_sync_update(&sync);
@@ -412,7 +412,7 @@ finished:
         rptr = requests;
         for (i = 0; i < count; i++, rptr++) {
             request = *rptr;
-            if( REQUEST_COMPLETED == request->req_complete) {
+            if( REQUEST_COMPLETE(request) ) {
                 OMPI_CRCP_REQUEST_COMPLETE(request);
             }
         }
@@ -438,7 +438,7 @@ finished:
             }
   
             OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, &sync, REQUEST_PENDING);
-            if(request->req_complete == REQUEST_COMPLETED) {
+            if(REQUEST_COMPLETE(request)) {
                 indices[i] = 1;
                 num_requests_done++;
             }
@@ -459,7 +459,7 @@ finished:
 
         for (i = 0; i < num_requests_done; i++) {
             request = requests[indices[i]];
-            assert( REQUEST_COMPLETED == request->req_complete );
+            assert( REQUEST_COMPLETE(request) );
             /* Per note above, we have to call gen request query_fn even
                if STATUS_IGNORE was provided */
             if (OMPI_REQUEST_GEN == request->req_type) {
