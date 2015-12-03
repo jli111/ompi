@@ -267,7 +267,7 @@ send_request_pml_complete(mca_pml_ob1_send_request_t *sendreq)
 #endif
     sendreq->req_send.req_base.req_pml_complete = true;
 
-    if( REQUEST_COMPLETED !=  sendreq->req_send.req_base.req_ompi.req_complete ){
+    if( !REQUEST_COMPLETE( &((sendreq->req_send).req_base.req_ompi)) ){
         /* Should only be called for long messages (maybe synchronous) */
         MCA_PML_OB1_SEND_REQUEST_MPI_COMPLETE(sendreq, true);
     } else {

@@ -150,7 +150,7 @@ typedef struct ompi_predefined_request_t ompi_predefined_request_t;
     } while (0);
 
 
-#define REQUEST_COMPLETE(req)        REQUEST_COMPLETED == (req)->req_complete
+#define REQUEST_COMPLETE(req)        (REQUEST_COMPLETED == (req)->req_complete)
 /**
  * Finalize a request.  This is a macro to avoid function call
  * overhead, since this is typically invoked in the critical
