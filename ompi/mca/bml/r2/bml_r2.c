@@ -430,6 +430,7 @@ static int mca_bml_r2_add_proc (struct ompi_proc_t *proc)
 
     /* compute metrics for registered btls */
     mca_bml_r2_compute_endpoint_metrics (bml_endpoint);
+    proc->proc_endpoints[OMPI_PROC_ENDPOINT_TAG_BML] = bml_endpoint;
 
     /* do it last, for the lazy initialization check in bml_base_get* */
     opal_atomic_wmb();
@@ -525,6 +526,7 @@ static int mca_bml_r2_add_procs( size_t nprocs,
             ompi_proc_t *proc = new_procs[p];
             mca_bml_base_endpoint_t *bml_endpoint =
                 (mca_bml_base_endpoint_t *) proc->proc_endpoints[OMPI_PROC_ENDPOINT_TAG_BML];
+            bool new_endpoint = false;
 
             if (NULL == bml_endpoint) {
                 bml_endpoint = mca_bml_r2_allocate_endpoint (proc);
@@ -534,12 +536,18 @@ static int mca_bml_r2_add_procs( size_t nprocs,
                     free(new_procs);
                     return OPAL_ERR_OUT_OF_RESOURCE;
                 }
+
+                new_endpoint = true;
             }
 
             rc = mca_bml_r2_endpoint_add_btl (proc, bml_endpoint, btl, btl_endpoints[p]);
             if (OMPI_SUCCESS != rc) {
                 btl->btl_del_procs(btl, 1, (opal_proc_t**)&proc, &btl_endpoints[p]);
                 continue;
+            }
+
+            if (new_endpoint) {
+                proc->proc_endpoints[OMPI_PROC_ENDPOINT_TAG_BML] = bml_endpoint;
             }
 
             /* This BTL is in use, allow the progress registration */
