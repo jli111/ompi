@@ -276,7 +276,7 @@ send_request_pml_complete(mca_pml_ob1_send_request_t *sendreq)
         }
     }
 #if OPAL_ENABLE_MULTI_THREADS
-    if( opal_atomic_cmpset_32(&sendreq->req_send.req_base.req_free_called, 0, 1) )
+    if( !opal_atomic_cmpset_32(&sendreq->req_send.req_base.req_free_called, 0, 1) )
 #else
     if(1 == sendreq->req_send.req_base.req_free_called)
 #endif
