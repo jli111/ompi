@@ -3,7 +3,7 @@
  * Copyright (c) 2004-2005 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2007 The University of Tennessee and The University
+ * Copyright (c) 2004-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2005 High Performance Computing Center Stuttgart,
@@ -379,7 +379,7 @@ static inline int ompi_request_free(ompi_request_t** request)
 static inline void ompi_request_wait_completion(ompi_request_t *req)
 {
     ompi_wait_sync_t sync;
-    WAIT_SYNC_INIT(&sync,1); 
+    WAIT_SYNC_INIT(&sync, 1); 
 
     if(OPAL_ATOMIC_CMPSET_PTR(&req->req_complete, REQUEST_PENDING, &sync)) {
         SYNC_WAIT(&sync);   
@@ -412,7 +412,9 @@ static inline int ompi_request_complete(ompi_request_t* request, bool with_signa
     if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED)) {
         ompi_wait_sync_t *tmp_sync = OPAL_ATOMIC_SWP_PTR(&request->req_complete,
                                                          REQUEST_COMPLETED);
-        wait_sync_update(tmp_sync,request->req_status.MPI_ERROR);
+        /* In the case where another thread concurrently changed the request to REQUEST_PENDING */
+        if( REQUEST_PENDING != tmp_sync )
+            wait_sync_update(tmp_sync, 1, request->req_status.MPI_ERROR);
     }
     
     if( OPAL_UNLIKELY(MPI_SUCCESS != request->req_status.MPI_ERROR) ) {

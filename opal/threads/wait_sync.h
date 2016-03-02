@@ -1,6 +1,6 @@
 /* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil -*- */
 /*
- * Copyright (c) 2014-2015 The University of Tennessee and The University
+ * Copyright (c) 2014-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * $COPYRIGHT$
@@ -69,20 +69,18 @@ OPAL_DECLSPEC int sync_wait_st(ompi_wait_sync_t *sync);
        (sync)->next = NULL;                           \
        (sync)->prev = NULL;                           \
        (sync)->status = 0;                            \
-       PTHREAD_COND_INIT(&(sync)->condition,NULL);    \
-       PTHREAD_MUTEX_INIT(&(sync)->lock,NULL);        \
+       PTHREAD_COND_INIT(&(sync)->condition, NULL);   \
+       PTHREAD_MUTEX_INIT(&(sync)->lock, NULL);       \
     } while(0)
 
-static inline void wait_sync_update(ompi_wait_sync_t *sync,int req_status)
+static inline void wait_sync_update(ompi_wait_sync_t *sync, int updates, int req_status)
 {
-    if(req_status != OPAL_SUCCESS){
-        OPAL_ATOMIC_CMPSET_32(&(sync->count),0,0);
+    if(req_status != OPAL_SUCCESS) {
+        OPAL_ATOMIC_CMPSET_32(&(sync->count), 0, 0);
         sync->status = -1;
         WAIT_SYNC_SIGNAL(sync);       
-
-    } 
-    else{  
-        if( (OPAL_ATOMIC_ADD_32(&sync->count,-1)) == 0) {
+    } else {
+        if( 0 == (OPAL_ATOMIC_ADD_32(&sync->count, -updates)) ) {
             WAIT_SYNC_SIGNAL(sync);
         }
     }
