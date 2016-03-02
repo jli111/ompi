@@ -1,6 +1,6 @@
 /* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil -*- */
 /*
- * Copyright (c) 2014-2015 The University of Tennessee and The University
+ * Copyright (c) 2014-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * $COPYRIGHT$
@@ -17,16 +17,16 @@ static ompi_wait_sync_t* wait_sync_list = NULL;
 #define WAIT_SYNC_PASS_OWNERSHIP(who)                  \
     do {                                               \
         pthread_mutex_lock( &(who)->lock);             \
-	pthread_cond_signal( &(who)->condition );      \
-	pthread_mutex_unlock( &(who)->lock);           \
+        pthread_cond_signal( &(who)->condition );      \
+        pthread_mutex_unlock( &(who)->lock);           \
     } while(0)
 
 
-int sync_wait_st(ompi_wait_sync_t *sync){
-
+int sync_wait_st(ompi_wait_sync_t *sync)
+{
     while(sync->count > 0){
         opal_progress();
-    } 
+    }
     return OPAL_SUCCESS;
 }
 
@@ -41,12 +41,12 @@ int sync_wait_mt(ompi_wait_sync_t *sync)
     OPAL_THREAD_LOCK(&wait_sync_lock);
     if( NULL == wait_sync_list ) {
         sync->next = sync->prev = sync;
-	wait_sync_list = sync;
+        wait_sync_list = sync;
     } else {
         sync->prev = wait_sync_list->prev;
-	sync->prev->next = sync;
-	sync->next = wait_sync_list;
-	wait_sync_list->prev = sync;
+        sync->prev->next = sync;
+        sync->next = wait_sync_list;
+        wait_sync_list->prev = sync;
     }
     OPAL_THREAD_UNLOCK(&wait_sync_lock);
 

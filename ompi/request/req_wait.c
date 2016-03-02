@@ -2,7 +2,7 @@
  * Copyright (c) 2004-2010 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2013 The University of Tennessee and The University
+ * Copyright (c) 2004-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2008 High Performance Computing Center Stuttgart,
@@ -80,23 +80,19 @@ int ompi_request_default_wait(
 }
 
 
-int ompi_request_default_wait_any(
-    size_t count,
-    ompi_request_t ** requests,
-    int *index,
-    ompi_status_public_t * status)
+int ompi_request_default_wait_any(size_t count,
+                                  ompi_request_t ** requests,
+                                  int *index,
+                                  ompi_status_public_t * status)
 {
-    size_t i=0, num_requests_null_inactive=0;
+    size_t i = 0, completed = count, num_requests_null_inactive = 0;
     int rc = OMPI_SUCCESS;
-    int completed = count;
     ompi_request_t **rptr=NULL;
     ompi_request_t *request=NULL;
     ompi_wait_sync_t sync;
 
-    WAIT_SYNC_INIT(&sync,1);
+    WAIT_SYNC_INIT(&sync, 1);
 
-    /* give up and sleep until completion */
-    
     rptr = requests;
     num_requests_null_inactive = 0;
     for (i = 0; i < count; i++, rptr++) {
@@ -115,30 +111,29 @@ int ompi_request_default_wait_any(
             num_requests_null_inactive++;
             continue;
         }
-        OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, REQUEST_COMPLETED);
-        if ( REQUEST_COMPLETE(request) ) {
-            wait_sync_update(&sync,request->req_status.MPI_ERROR);
+        if(!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, &sync)) {
+            assert(REQUEST_COMPLETE(request));
+            wait_sync_update( &sync, 1, request->req_status.MPI_ERROR);
             completed = i;
             break;
         }
     }
     SYNC_WAIT(&sync);
     
-
     /* recheck the complete status and clean up the sync primitives */
     rptr = requests;
-    num_requests_null_inactive = 0;
     for(i = 0; i < completed; i++, rptr++) {
         request = *rptr;
 
         if( request->req_state == OMPI_REQUEST_INACTIVE ) {
-            num_requests_null_inactive++;
             continue;
         }
+        /* Atomically mark the request as pending. If this succeed then the
+         * request was not completed, and it is now marked as pending. Otherwise,
+         * the request has been completed meanwhile, and it has been atomically
+         * marked as REQUEST_COMPLETE.
+         */
         OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, &sync, REQUEST_PENDING);
-        if ( REQUEST_COMPLETE(request) ) {
-            completed = i;
-        }
     }
 
     if(num_requests_null_inactive == count) {
@@ -199,10 +194,10 @@ int ompi_request_default_wait_all( size_t count,
     int mpi_error = OMPI_SUCCESS;
     ompi_wait_sync_t sync;
 
+    WAIT_SYNC_INIT(&sync, count);
     rptr = requests;
     for (i = 0; i < count; i++) {
         request = *rptr++;
-
         
         if (!OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, &sync)) {
             if( OPAL_UNLIKELY( MPI_SUCCESS != request->req_status.MPI_ERROR ) ) {
@@ -211,20 +206,19 @@ int ompi_request_default_wait_all( size_t count,
             completed++;
         }
     }
+    if( 0 != completed ) {
+        wait_sync_update(&sync, completed, OPAL_SUCCESS);
+    }
 
-    WAIT_SYNC_INIT(&sync,count-completed);
     if( failed > 0 ) {
         goto finish;
     }
 
-    /* if all requests have not completed -- defer acquiring lock
-     * unless required
+    /*
+     * acquire lock and test for completion - if all requests are
+     * not completed pend on condition variable until a request
+     * completes
      */
-        /*
-         * acquire lock and test for completion - if all requests are
-         * not completed pend on condition variable until a request
-         * completes
-         */
     SYNC_WAIT(&sync);
 #if OPAL_ENABLE_FT_CR == 1
     if( opal_cr_is_enabled) {
@@ -352,30 +346,21 @@ int ompi_request_default_wait_all( size_t count,
 }
 
 
-int ompi_request_default_wait_some(
-    size_t count,
-    ompi_request_t ** requests,
-    int * outcount,
-    int * indices,
-    ompi_status_public_t * statuses)
+int ompi_request_default_wait_some(size_t count,
+                                   ompi_request_t ** requests,
+                                   int * outcount,
+                                   int * indices,
+                                   ompi_status_public_t * statuses)
 {
-#if OPAL_ENABLE_PROGRESS_THREADS
-    int c;
-#endif
     size_t i, num_requests_null_inactive=0, num_requests_done=0;
     int rc = MPI_SUCCESS;
-    ompi_request_t **rptr=NULL;
-    ompi_request_t *request=NULL;
+    ompi_request_t **rptr = NULL;
+    ompi_request_t *request = NULL;
     ompi_wait_sync_t sync;
 
-
-    WAIT_SYNC_INIT(&sync,1);
-
+    WAIT_SYNC_INIT(&sync, 1);
 
     *outcount = 0;
-    for (i = 0; i < count; i++){
-        indices[i] = 0;
-    }
 
     /*
      * We only get here when outcount still is 0.
@@ -395,18 +380,16 @@ int ompi_request_default_wait_some(
             continue;
         }
 
-        OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, &sync);
-        if( REQUEST_COMPLETE(request) ) {
-            indices[i] = 1;
+        if( !OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, REQUEST_PENDING, &sync) ) {
+            assert( REQUEST_COMPLETE(request) );
             num_requests_done++;
-            wait_sync_update(&sync,request->req_status.MPI_ERROR);
         }
     }
+    if( 0 != num_requests_done ) {
+        /* As we only expect one trigger update the sync with count 1 */
+        wait_sync_update(&sync, 1, request->req_status.MPI_ERROR);
+    }
     SYNC_WAIT(&sync);
-
-#if OPAL_ENABLE_PROGRESS_THREADS
-finished:
-#endif  /* OPAL_ENABLE_PROGRESS_THREADS */
 
 #if OPAL_ENABLE_FT_CR == 1
     if( opal_cr_is_enabled) {
@@ -428,33 +411,22 @@ finished:
         /* Clean up the synchronization primitives */
 
         rptr = requests;
-        num_requests_null_inactive = 0;
         num_requests_done = 0;
         for (i = 0; i < count; i++, rptr++) {
             request = *rptr;
 
             if( request->req_state == OMPI_REQUEST_INACTIVE ) {
-                num_requests_null_inactive++;
                 continue;
             }
   
-            OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, &sync, REQUEST_PENDING);
-            if(REQUEST_COMPLETE(request)) {
-                indices[i] = 1;
+            if( !OPAL_ATOMIC_CMPSET_PTR(&request->req_complete, &sync, REQUEST_PENDING) ) {
+                assert(REQUEST_COMPLETE(request));
+                indices[num_requests_done] = i;
                 num_requests_done++;
             }
         }
 
         WAIT_SYNC_RELEASE(&sync);
-
-        /*
-         * Compress the index array.
-         */
-        for (i = 0, num_requests_done = 0; i < count; i++) {
-            if (0 != indices[i]) {
-                indices[num_requests_done++] = i;
-            }
-        }
 
         *outcount = num_requests_done;
 

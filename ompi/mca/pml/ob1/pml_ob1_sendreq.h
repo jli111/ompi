@@ -3,7 +3,7 @@
  * Copyright (c) 2004-2005 The Trustees of Indiana University and Indiana
  *                         University Research and Technology
  *                         Corporation.  All rights reserved.
- * Copyright (c) 2004-2014 The University of Tennessee and The University
+ * Copyright (c) 2004-2016 The University of Tennessee and The University
  *                         of Tennessee Research Foundation.  All rights
  *                         reserved.
  * Copyright (c) 2004-2005 High Performance Computing Center Stuttgart,
@@ -267,7 +267,7 @@ send_request_pml_complete(mca_pml_ob1_send_request_t *sendreq)
 #endif
     sendreq->req_send.req_base.req_pml_complete = true;
 
-    if( !REQUEST_COMPLETE( &((sendreq->req_send).req_base.req_ompi)) ){
+    if( !REQUEST_COMPLETE( &((sendreq->req_send).req_base.req_ompi)) ) {
         /* Should only be called for long messages (maybe synchronous) */
         MCA_PML_OB1_SEND_REQUEST_MPI_COMPLETE(sendreq, true);
     } else {
@@ -276,13 +276,13 @@ send_request_pml_complete(mca_pml_ob1_send_request_t *sendreq)
         }
     }
 #if OPAL_ENABLE_MULTI_THREADS
-    if(opal_atomic_cmpset_32(&sendreq->req_send.req_base.req_free_called,
-                             0, 1)){
+    if( opal_atomic_cmpset_32(&sendreq->req_send.req_base.req_free_called, 0, 1) )
 #else
-    if(sendreq->req_send.req_base.req_free_called == 1){
+    if(1 == sendreq->req_send.req_base.req_free_called)
 #endif
-        MCA_PML_OB1_SEND_REQUEST_RETURN(sendreq);
-    }
+        {
+            MCA_PML_OB1_SEND_REQUEST_RETURN(sendreq);
+        }
 }
 
 /* returns true if request was completed on PML level */
