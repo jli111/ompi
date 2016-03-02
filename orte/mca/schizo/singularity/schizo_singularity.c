@@ -17,6 +17,7 @@
 #endif
 #include <ctype.h>
 
+#include "opal/util/argv.h"
 #include "opal/util/basename.h"
 #include "opal/util/opal_environ.h"
 
@@ -30,10 +31,7 @@ static int setup_fork(orte_job_t *jdata,
                       orte_app_context_t *context);
 
 orte_schizo_base_module_t orte_schizo_singularity_module = {
-    NULL,
-    NULL,
-    setup_fork,
-    NULL
+    .setup_fork = setup_fork
 };
 
 static int setup_fork(orte_job_t *jdata,
