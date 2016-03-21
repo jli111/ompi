@@ -71,8 +71,8 @@ static int mca_pml_ob1_recv_request_free(struct ompi_request_t** request)
 {
     mca_pml_ob1_recv_request_t* recvreq = *(mca_pml_ob1_recv_request_t**)request;
 
+    OPAL_THREAD_LOCK(&ompi_request_lock);
     if(false == recvreq->req_recv.req_base.req_free_called){
-        OPAL_THREAD_LOCK(&ompi_request_lock);
 
         recvreq->req_recv.req_base.req_free_called = true;
         PERUSE_TRACE_COMM_EVENT( PERUSE_COMM_REQ_NOTIFY,
@@ -91,9 +91,8 @@ static int mca_pml_ob1_recv_request_free(struct ompi_request_t** request)
             MCA_PML_OB1_RECV_REQUEST_RETURN( recvreq );
         }
 
-        OPAL_THREAD_UNLOCK(&ompi_request_lock);
     }
-
+    OPAL_THREAD_UNLOCK(&ompi_request_lock);
     *request = MPI_REQUEST_NULL;
     return OMPI_SUCCESS;
 }
