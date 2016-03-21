@@ -98,9 +98,9 @@ void mca_pml_ob1_send_request_process_pending(mca_bml_base_btl_t *bml_btl)
 static int mca_pml_ob1_send_request_free(struct ompi_request_t** request)
 {
     mca_pml_ob1_send_request_t* sendreq = *(mca_pml_ob1_send_request_t**)request;
+    OPAL_THREAD_LOCK(&ompi_request_lock);
     if(false == sendreq->req_send.req_base.req_free_called){
 
-        OPAL_THREAD_LOCK(&ompi_request_lock);
         sendreq->req_send.req_base.req_free_called = true;
         PERUSE_TRACE_COMM_EVENT( PERUSE_COMM_REQ_NOTIFY,
                              &(sendreq->req_send.req_base), PERUSE_SEND );
@@ -117,9 +117,9 @@ static int mca_pml_ob1_send_request_free(struct ompi_request_t** request)
 
             MCA_PML_OB1_SEND_REQUEST_RETURN( sendreq );
         }
-        OPAL_THREAD_UNLOCK(&ompi_request_lock);
         *request = MPI_REQUEST_NULL;
     }
+    OPAL_THREAD_UNLOCK(&ompi_request_lock);
     return OMPI_SUCCESS;
 }
 
