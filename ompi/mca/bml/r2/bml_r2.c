@@ -430,7 +430,6 @@ static int mca_bml_r2_add_proc (struct ompi_proc_t *proc)
 
     /* compute metrics for registered btls */
     mca_bml_r2_compute_endpoint_metrics (bml_endpoint);
-    proc->proc_endpoints[OMPI_PROC_ENDPOINT_TAG_BML] = bml_endpoint;
 
     /* do it last, for the lazy initialization check in bml_base_get* */
     opal_atomic_wmb();
