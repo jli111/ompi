@@ -76,12 +76,22 @@ typedef struct ompi_wait_sync_t {
         (sync)->signaling = false;                    \
 }
 
+
+/* not static for inline "wait_sync_st" */
+OPAL_DECLSPEC extern ompi_wait_sync_t *wait_sync_list;
+
 OPAL_DECLSPEC int ompi_sync_wait_mt(ompi_wait_sync_t *sync);
 static inline int sync_wait_st (ompi_wait_sync_t *sync)
 {
+    assert( NULL == wait_sync_list );
+    assert( NULL == sync->next );
+    wait_sync_list = sync;
+
     while (sync->count > 0) {
         opal_progress();
     }
+
+    wait_sync_list = NULL;
 
     return sync->status;
 }
@@ -114,12 +124,21 @@ static inline void wait_sync_update(ompi_wait_sync_t *sync, int updates, int sta
         }
     } else {
         /* this is an error path so just use the atomic */
-        sync->status = OPAL_ERROR;
+        sync->status = status;
         opal_atomic_wmb ();
         opal_atomic_swap_32 (&sync->count, 0);
     }
     WAIT_SYNC_SIGNAL(sync);
 }
+
+/**
+ * Wake up all syncs with a particular status. If status is OMPI_SUCCESS this
+ * operation is a NO-OP. Otherwise it will trigger the "error condition" from
+ * all registered sync.
+ */
+OPAL_DECLSPEC int wait_sync_global_wakeup_st(int status);
+OPAL_DECLSPEC int wait_sync_global_wakeup_mt(int status);
+#define wait_sync_global_wakeup(st) (opal_using_threads()? wait_sync_global_wakeup_mt(st): wait_sync_global_wakeup_st(st))
 
 END_C_DECLS
 
