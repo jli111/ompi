@@ -408,7 +408,11 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
             WAIT_SYNC_SIGNALLED(&sync);
         }
 
+#if OPAL_ENABLE_FT_MPI
+        assert(REQUEST_COMPLETE(req) || !ompi_request_state_ok(req));
+#else
         assert(REQUEST_COMPLETE(req));
+#endif /* OPAL_ENABLE_FT_MPI */
         WAIT_SYNC_RELEASE(&sync);
     } else {
         while(!REQUEST_COMPLETE(req)) {
