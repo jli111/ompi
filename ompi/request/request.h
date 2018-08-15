@@ -399,20 +399,27 @@ static inline void ompi_request_wait_completion(ompi_request_t *req)
         void *_tmp_ptr = REQUEST_PENDING;
         ompi_wait_sync_t sync;
 
+redo:
         WAIT_SYNC_INIT(&sync, 1);
 
         if (OPAL_ATOMIC_COMPARE_EXCHANGE_STRONG_PTR(&req->req_complete, &_tmp_ptr, &sync)) {
             SYNC_WAIT(&sync);
+            if (OPAL_UNLIKELY(OMPI_SUCCESS != sync.status)) {
+                /* The sync triggered because of an error. The error may be for
+                 * us, but it may be for some other pending wait, in which case
+                 * we need to rearm the sync and return waiting.
+                 */
+                if (OPAL_ATOMIC_COMPARE_EXCHANGE_STRONG_PTR(&req->req_complete, &sync, REQUEST_PENDING)) {
+                    /*  request was not completed, lets rearm the sync */
+                    goto redo;
+                }
+            }
         } else {
             /* completed before we had a chance to swap in the sync object */
             WAIT_SYNC_SIGNALLED(&sync);
         }
 
-#if OPAL_ENABLE_FT_MPI
-        assert(REQUEST_COMPLETE(req) || !ompi_request_state_ok(req));
-#else
         assert(REQUEST_COMPLETE(req));
-#endif /* OPAL_ENABLE_FT_MPI */
         WAIT_SYNC_RELEASE(&sync);
     } else {
         while(!REQUEST_COMPLETE(req)) {
