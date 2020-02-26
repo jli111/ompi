@@ -35,6 +35,11 @@
 #include "coll_base_topo.h"
 #include "coll_base_util.h"
 
+#include <math.h>
+#include "ompi/mca/osc/osc.h"
+#include "ompi/win/win.h"
+//#include "opal/mca/common/ucx/common_ucx.h"
+
 /* MPI_IN_PLACE all to all algorithm. TODO: implement a better one. */
 int
 mca_coll_base_alltoall_intra_basic_inplace(const void *rbuf, int rcount,
@@ -129,6 +134,17 @@ mca_coll_base_alltoall_intra_basic_inplace(const void *rbuf, int rcount,
     return err;
 }
 
+void debug_help(){
+    volatile int sleep_iter = 0;
+    char hostname[256];
+    gethostname(hostname, sizeof(hostname));
+    printf("\n### PID %d on %s ready for attach\n", getpid(), hostname);
+    fflush(stdout);
+    while (0 == sleep_iter){
+        sleep(20);
+    }
+}
+
 int ompi_coll_base_alltoall_intra_pairwise(const void *sbuf, int scount,
                                             struct ompi_datatype_t *sdtype,
                                             void* rbuf, int rcount,
@@ -139,6 +155,11 @@ int ompi_coll_base_alltoall_intra_pairwise(const void *sbuf, int scount,
     int line = -1, err = 0, rank, size, step, sendto, recvfrom;
     void * tmpsend, *tmprecv;
     ptrdiff_t lb, sext, rext;
+    int pd_siter = 0;
+    int pd_riter = 0;
+    float *new_sbuf, *new_rbuf;
+
+    double t1, t2, duration = 0.0;
 
     if (MPI_IN_PLACE == sbuf) {
         return mca_coll_base_alltoall_intra_basic_inplace (rbuf, rcount, rdtype,
@@ -151,13 +172,24 @@ int ompi_coll_base_alltoall_intra_pairwise(const void *sbuf, int scount,
     OPAL_OUTPUT((ompi_coll_base_framework.framework_output,
                  "coll:base:alltoall_intra_pairwise rank %d", rank));
 
+   /*
+    sdtype = MPI_FLOAT;
+    rdtype = MPI_FLOAT;
+
+    pd_siter = ceil( (float)(scount*size) / 4 );
+    pd_riter = ceil( (float)(rcount*size) / 4 );
+    new_sbuf=(float*)malloc(pd_siter*4*sizeof(float));
+    new_rbuf=(float*)malloc(pd_riter*4*sizeof(float));
+    sext = rext = 4;
+    */
     err = ompi_datatype_get_extent (sdtype, &lb, &sext);
     if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl; }
     err = ompi_datatype_get_extent (rdtype, &lb, &rext);
     if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl; }
-
+    //conv_DOUBLE_to_FLOAT((double*)sbuf, new_sbuf, pd_siter);
 
     /* Perform pairwise exchange - starting from 1 so the local copy is last */
+    t1 = MPI_Wtime();
     for (step = 1; step < size + 1; step++) {
 
         /* Determine sender and receiver for this step. */
@@ -176,6 +208,120 @@ int ompi_coll_base_alltoall_intra_pairwise(const void *sbuf, int scount,
                                         comm, MPI_STATUS_IGNORE, rank);
         if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl;  }
     }
+    t2 = MPI_Wtime();
+    duration = t2-t1;
+    printf("%f,",duration*1000000);
+
+    /*
+    conv_FLOAT_to_DOUBLE(new_rbuf, (double*)rbuf, pd_riter);
+
+    if (NULL != new_sbuf) free(new_sbuf);
+    if (NULL != new_rbuf) free(new_rbuf);
+    */
+    return MPI_SUCCESS;
+
+ err_hndl:
+    OPAL_OUTPUT((ompi_coll_base_framework.framework_output,
+                 "%s:%4d\tError occurred %d, rank %2d", __FILE__, line,
+                 err, rank));
+    (void)line;  // silence compiler warning
+    return err;
+}
+
+int ompi_coll_base_alltoall_intra_triggered_op(const void *sbuf, int scount,
+                                            struct ompi_datatype_t *sdtype,
+                                            void* rbuf, int rcount,
+                                            struct ompi_datatype_t *rdtype,
+                                            struct ompi_communicator_t *comm,
+                                            mca_coll_base_module_t *module)
+{
+    int line = -1, err = 0, rank, size, step, sendto, recvfrom;
+    void * tmpsend, *tmprecv;
+    ptrdiff_t lb, sext, rext;
+    int pd_siter = 0;
+    int pd_riter = 0;
+    MPI_Win win, win1;
+    int i, j, flag=1;
+    int *flag_arr;
+
+    double t1, t2, duration = 0.0;
+
+    if (MPI_IN_PLACE == sbuf) {
+        return mca_coll_base_alltoall_intra_basic_inplace (rbuf, rcount, rdtype,
+                                                            comm, module);
+    }
+
+    size = ompi_comm_size(comm);
+    rank = ompi_comm_rank(comm);
+
+    OPAL_OUTPUT((ompi_coll_base_framework.framework_output,
+                 "coll:base:alltoall_intra_triggered_op rank %d", rank));
+
+    err = ompi_datatype_get_extent (sdtype, &lb, &sext);
+    if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl; }
+    err = ompi_datatype_get_extent (rdtype, &lb, &rext);
+    if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl; }
+
+    flag_arr = (int*)calloc( size, sizeof(int) );
+
+    err = ompi_win_create(rbuf, (ptrdiff_t)rcount*rext*size, rext, comm,
+                                          MPI_INFO_NULL, &win);
+    if (OMPI_SUCCESS != err) {
+        win = MPI_WIN_NULL;
+        line = __LINE__; goto err_hndl;
+    }
+    err = ompi_win_create(flag_arr, (size+1)*sizeof(int), sizeof(int), comm,
+                                          MPI_INFO_NULL, &win1);
+    if (OMPI_SUCCESS != err) {
+        win1 = MPI_WIN_NULL;
+        line = __LINE__; goto err_hndl;
+    }
+
+    /* Perform pairwise exchange - starting from 1 so the local copy is last */
+    t1 = MPI_Wtime();
+
+    step = 1;
+    while( step < size + 1 ) {
+
+        /* Determine sender and receiver for this step. */
+        sendto  = (rank + step) % size;
+        recvfrom = (rank + size - step) % size;
+
+        /* Determine sending and receiving locations */
+        tmpsend = (char*)sbuf + (ptrdiff_t)sendto * sext * (ptrdiff_t)scount;
+        tmprecv = (char*)rbuf + (ptrdiff_t)recvfrom * rext * (ptrdiff_t)rcount;
+
+
+        /* send and receive */
+        err = win->w_osc_module->osc_lock(MPI_LOCK_SHARED, sendto, 0, win);
+        if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl; }
+        err = win->w_osc_module->osc_put(tmpsend, scount, sdtype,
+                                         sendto, rank * (ptrdiff_t)scount, rcount,
+                                         rdtype, win);
+        if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl;  }
+
+        err = win->w_osc_module->osc_unlock(sendto, win);
+        if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl; }
+
+        /* SOME RANDOM STUFF */
+
+        if (recvfrom != rank){
+            err = win->w_osc_module->osc_lock(MPI_LOCK_SHARED, recvfrom, 0, win1);
+            if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl; }
+            err =  win->w_osc_module->osc_accumulate(&flag, 1, MPI_INT, recvfrom, step, 1, MPI_INT, MPI_SUM, win1);
+            if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl; }
+            err = win->w_osc_module->osc_unlock(recvfrom, win1);
+            if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl; }
+        }
+
+        while ( !flag_arr[step] || rank == recvfrom ){
+            break;
+        }
+        step += 1;
+    }
+
+    err = win->w_osc_module->osc_fence(0, win);
+    if (err != MPI_SUCCESS) { line = __LINE__; goto err_hndl; }
 
     return MPI_SUCCESS;
 
@@ -594,6 +740,12 @@ int ompi_coll_base_alltoall_intra_basic_linear(const void *sbuf, int scount,
     OPAL_OUTPUT((ompi_coll_base_framework.framework_output,
                  "ompi_coll_base_alltoall_intra_basic_linear rank %d", rank));
 
+
+    sdtype = rdtype = MPI_FLOAT;
+    int pd_siter = ceil( (float)scount / 4 );
+    int pd_riter = ceil( (float)rcount / 4 );
+    float new_sbuf[pd_siter*4], new_rbuf[pd_riter*4];
+
     err = ompi_datatype_get_extent(sdtype, &lb, &sndinc);
     if (OMPI_SUCCESS != err) {
         return err;
@@ -606,10 +758,13 @@ int ompi_coll_base_alltoall_intra_basic_linear(const void *sbuf, int scount,
     }
     rcvinc *= rcount;
 
+    printf("\n### Basic Linear ALL2ALL\n");
     /* simple optimization */
 
-    psnd = ((char *) sbuf) + (ptrdiff_t)rank * sndinc;
-    prcv = ((char *) rbuf) + (ptrdiff_t)rank * rcvinc;
+    conv_DOUBLE_to_FLOAT((double*)sbuf, new_sbuf, pd_siter);
+
+    psnd = ((char *) new_sbuf) + (ptrdiff_t)rank * sndinc;
+    prcv = ((char *) new_rbuf) + (ptrdiff_t)rank * rcvinc;
 
     err = ompi_datatype_sndrcv(psnd, scount, sdtype, prcv, rcount, rdtype);
     if (MPI_SUCCESS != err) {
@@ -627,8 +782,8 @@ int ompi_coll_base_alltoall_intra_basic_linear(const void *sbuf, int scount,
     req = rreq = ompi_coll_base_comm_get_reqs(data, (size - 1) * 2);
     if (NULL == req) { err = OMPI_ERR_OUT_OF_RESOURCE; line = __LINE__; goto err_hndl; }
 
-    prcv = (char *) rbuf;
-    psnd = (char *) sbuf;
+    prcv = (char *) new_rbuf;
+    psnd = (char *) new_sbuf;
 
     /* Post all receives first -- a simple optimization */
 
@@ -687,6 +842,8 @@ int ompi_coll_base_alltoall_intra_basic_linear(const void *sbuf, int scount,
     }
     /* Free the reqs in all cases as they are persistent requests */
     ompi_coll_base_free_reqs(req, nreqs);
+    
+    conv_FLOAT_to_DOUBLE(new_rbuf, (double*)rbuf, pd_riter);
 
     /* All done */
     return err;

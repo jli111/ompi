@@ -211,6 +211,7 @@ int ompi_coll_base_allreduce_intra_redscat_allgather(ALLREDUCE_ARGS);
 
 /* AlltoAll */
 int ompi_coll_base_alltoall_intra_pairwise(ALLTOALL_ARGS);
+int ompi_coll_base_alltoall_intra_triggered_op(ALLTOALL_ARGS);
 int ompi_coll_base_alltoall_intra_bruck(ALLTOALL_ARGS);
 int ompi_coll_base_alltoall_intra_basic_linear(ALLTOALL_ARGS);
 int ompi_coll_base_alltoall_intra_linear_sync(ALLTOALL_ARGS, int max_requests);
@@ -300,6 +301,13 @@ int ompi_coll_base_scatter_intra_linear_nb(SCATTER_ARGS, int max_reqs);
 int mca_coll_base_reduce_local(const void *inbuf, void *inoutbuf, int count,
                                struct ompi_datatype_t * dtype, struct ompi_op_t * op,
                                mca_coll_base_module_t *module);
+
+void conv_DOUBLE_to_FLOAT(double* sbuf, float* tbuf, int pd_iter);
+void conv_FLOAT_to_HALF(float* sbuf, char* tbuf, int ps_iter);
+void conv_DOUBLE_to_HALF(double* sbuf, char* tbuf, int pd_iter);
+void conv_HALF_to_FLOAT(char* sbuf, float* tbuf, int ps_iter);
+void conv_FLOAT_to_DOUBLE(float* sbuf, double* tbuf, int ps_iter);
+void conv_HALF_to_DOUBLE(char* sbuf, double* tbuf, int ps_iter);
 
 END_C_DECLS
 

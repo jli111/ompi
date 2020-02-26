@@ -40,6 +40,7 @@
 #include "coll_base_util.h"
 #include <immintrin.h>
 #include <emmintrin.h>
+#include <math.h>
 
 /*
  * ompi_coll_base_allreduce_intra_nonoverlapping
@@ -94,7 +95,7 @@ ompi_coll_base_allreduce_intra_nonoverlapping(const void *sbuf, void *rbuf, int 
  *   Accepts:        Same as MPI_Allreduce()
  *   Returns:        MPI_SUCCESS or error code
  *
- *   Description:    Implements recursive doubling algorithm for allreduce.
+ *   Descripon:    Implements recursive doubling algorithm for allreduce.
  *                   Original (non-segmented) implementation is used in MPICH-2
  *                   for small and intermediate size messages.
  *                   The algorithm preserves order of operations so it can
@@ -340,7 +341,7 @@ ompi_coll_base_allreduce_intra_recursivedoubling(const void *sbuf, void *rbuf,
  *
  */
 
-// Downcasting
+/*
 void conv_DOUBLE_to_FLOAT(double* sbuf, float* tbuf, int pd_iter)
 {
     int i;
@@ -368,7 +369,6 @@ void conv_DOUBLE_to_HALF(double* sbuf, char* tbuf, int pd_iter)
     conv_FLOAT_to_HALF(tmpbuf, tbuf, pd_iter);
 }
 
-// Upcasting
 void conv_HALF_to_FLOAT(char* sbuf, float* tbuf, int ps_iter)
 {
     int i;
@@ -395,34 +395,42 @@ void conv_HALF_to_DOUBLE(char* sbuf, double* tbuf, int ps_iter)
     conv_HALF_to_FLOAT(sbuf, tmpbuf, ps_iter);
     conv_FLOAT_to_DOUBLE(tmpbuf, tbuf, ps_iter);
 }
-
-// Convert 2 FP16 to FP32; sum them up; then convert back to FP16
+*/
+// When new_typs == 1: Convert 2 FP16 to FP32; sum them up; then convert back to FP16
+// When new_type == 2: Sum in FLOATs
 void op_sum(void *in, void *out, int *count, int new_type)
 {
 
-    //printf("### Going to do op\n");
-    int i;
-    if (1 == new_type){
-        int ps_iter = (*count/8);
-        if ( *count%8 > 0 ) { ps_iter += 1; }
-        char *a = (char*)in;
-        char *b = (char*)out;
-        for(i = 0; i < ps_iter*8; i+=8){
-            __m256 vector_a = _mm256_cvtph_ps(_mm_load_si128((__m128i*)&a[i*2]));
-            __m256 vector_b = _mm256_cvtph_ps(_mm_load_si128((__m128i*)&b[i*2]));
-            vector_b = _mm256_add_ps(vector_a, vector_b);
-            __m128i half_b = _mm256_cvtps_ph(vector_b,0);
-            _mm_store_si128((__m128i*)&b[i*2], half_b);
-        }
-    }else if (2 == new_type){
-        float *c = (float*)in;
-        float *d = (float*)out;
-        for (i = 0; i < *count; ++i){
-            *(d++) += *(c++);
-        }
+    int i, iter;
+    switch(new_type)
+    {
+        case 1:
+            iter = ceil((float)*count/8);
+            char *a = (char*)in;
+            char *b = (char*)out;
+            for(i = 0; i < iter*8; i += 8){
+                __m256 vector_a = _mm256_cvtph_ps(_mm_load_si128((__m128i*)&a[i*2]));
+                __m256 vector_b = _mm256_cvtph_ps(_mm_load_si128((__m128i*)&b[i*2]));
+                vector_b = _mm256_add_ps(vector_a, vector_b);
+                __m128i half_b = _mm256_cvtps_ph(vector_b,0);
+                _mm_store_si128((__m128i*)&b[i*2], half_b);
+            }
+            break;
+        case 2:
+            iter = ceil((float)*count/4);
+            float *c = (float*)in;
+            float *d = (float*)out;
+            for(i = 0; i < iter*4; i += 4){
+                __m128 vector_a = _mm_load_ps(&c[i]);
+                __m128 vector_b = _mm_load_ps(&d[i]);
+                vector_b = _mm_add_ps(vector_a, vector_b);
+                _mm_store_ps(&d[i], vector_b);
+            }
+            break;
     }
 }
 
+/*
 void debug_help(){
     volatile int sleep_iter = 0;
     char hostname[256];
@@ -430,9 +438,10 @@ void debug_help(){
     printf("\n### PID %d on %s ready for attach\n", getpid(), hostname);
     fflush(stdout);
     while (0 == sleep_iter){
-        sleep(3);
+        sleep(20);
     }
 }
+*/
 
 int
 ompi_coll_base_allreduce_intra_mixed_precision_ring(const void *sbuf, void *rbuf, int count,
@@ -492,7 +501,6 @@ ompi_coll_base_allreduce_intra_mixed_precision_ring(const void *sbuf, void *rbuf
     COLL_BASE_COMPUTE_BLOCKCOUNT( count, size, split_rank,
                                    early_segcount, late_segcount );
     max_segcount = early_segcount;
-    max_real_segsize = true_extent + (max_segcount - 1) * extent;
 
     /* Handle MPI_IN_PLACE */
     if (MPI_IN_PLACE != sbuf) {
@@ -502,38 +510,52 @@ ompi_coll_base_allreduce_intra_mixed_precision_ring(const void *sbuf, void *rbuf
 
     //debug_help();
 
-    char* new_rbuf;
-    int ps_iter = (count/8);
-    int pd_iter = (count/4);
+    char *new_rbuf = NULL;
+
+    // Always round up when count is not divisible by 8 or 4
+    int ps_iter = ceil((float)count/8);
+    int pd_iter = ceil((float)count/4);
+    MPI_Datatype rdtype;
+
+    // Init return value for strcmp
     int ret1 = 100;
     int ret2 = 100;
-    if ( count%8 > 0 ) { ps_iter += 1; }
-    if ( count%4 > 0 ) { pd_iter += 1; }
 
 
+    double t1 = 0.0, t2 = 0.0, t3 = 0.0, t4 = 0.0, conv_duration = 0.0, duration = 0.0;
     char oldtype[20];
     int retlen;
-    int new_type;  // 1: HALf; 2: FLOAT
+    int new_type = 0;  // 1: HALf; 2: FLOAT
     MPI_Type_set_name(MPI_FLOAT, "FLOAT");
     MPI_Type_set_name(MPI_DOUBLE, "DOUBLE");
     MPI_Type_get_name(dtype, oldtype, &retlen);
     ret1 = strcmp(oldtype, "FLOAT");
     ret2 = strcmp(oldtype, "DOUBLE");
 
-    if (0 == ret1 && 0 != ret2){
+    if (0 == ret1){
         true_extent = extent = 2;
-        new_rbuf =(char*)malloc(sizeof(char) * 2 * ps_iter * 8);
         new_type = 1;
+        new_rbuf =(char*)malloc(sizeof(char) * 2 * ps_iter * 8);
+        rdtype = MPI_SHORT;
+        t1 = MPI_Wtime();
         conv_FLOAT_to_HALF((float*)rbuf, new_rbuf, ps_iter);
-        //printf("\n### Rank %d : Converted from SINGLE to HALF\n", rank);
-    }else if(0 == ret2 && 0 != ret1){
+        t2 = MPI_Wtime();
+        conv_duration += (t2-t1);
+    }else if(0 == ret2){
         true_extent = extent = 4;
-        (float*)new_rbuf = (float*)malloc(sizeof(float) * pd_iter * 4);
         new_type = 2;
+        new_rbuf = (float*)malloc(sizeof(float) * pd_iter * 4);
+        rdtype = MPI_FLOAT;
+        t1 = MPI_Wtime();
         conv_DOUBLE_to_FLOAT((double*)rbuf, (float*)new_rbuf, pd_iter);
+        t2 = MPI_Wtime();
+        conv_duration += (t2-t1);
     }else{
         new_rbuf = (char*)rbuf;
     }
+
+
+    max_real_segsize = true_extent + (max_segcount - 1) * extent;
 
     inbuf[0] = (char*)malloc(max_real_segsize);
     if (NULL == inbuf[0]) { ret = -1; line = __LINE__; goto error_hndl; }
@@ -564,7 +586,8 @@ ompi_coll_base_allreduce_intra_mixed_precision_ring(const void *sbuf, void *rbuf
 
     inbi = 0;
     /* Initialize first receive from the neighbor on the left */
-    ret = MCA_PML_CALL(irecv(inbuf[inbi], max_segcount, dtype, recv_from,
+    //ret = MCA_PML_CALL(irecv(inbuf[inbi], max_segcount, dtype, recv_from,
+    ret = MCA_PML_CALL(irecv(inbuf[inbi], max_segcount, rdtype, recv_from,
                              MCA_COLL_BASE_TAG_ALLREDUCE, comm, &reqs[inbi]));
     if (MPI_SUCCESS != ret) { line = __LINE__; goto error_hndl; }
     /* Send first block (my block) to the neighbor on the right */
@@ -575,8 +598,8 @@ ompi_coll_base_allreduce_intra_mixed_precision_ring(const void *sbuf, void *rbuf
 
 
     tmpsend = ((char*)new_rbuf) + block_offset * extent;
-    //printf("\n### Rank %d about to send buffer tmpsend @ %p\n", rank, tmpsend);
-    ret = MCA_PML_CALL(send(tmpsend, block_count, dtype, send_to,
+    //ret = MCA_PML_CALL(send(tmpsend, block_count, dtype, send_to,
+    ret = MCA_PML_CALL(send(tmpsend, block_count, rdtype, send_to,
                             MCA_COLL_BASE_TAG_ALLREDUCE,
                             MCA_PML_BASE_SEND_STANDARD, comm));
     if (MPI_SUCCESS != ret) { line = __LINE__; goto error_hndl; }
@@ -587,9 +610,8 @@ ompi_coll_base_allreduce_intra_mixed_precision_ring(const void *sbuf, void *rbuf
         inbi = inbi ^ 0x1;
 
         /* Post irecv for the current block */
-        // J.L : recv FLOAT buffer
-        //printf("\n### Rank %d about to recv buffer inbuf[%d] @ %p\n", inbi, rank, &inbuf[inbi]);
-        ret = MCA_PML_CALL(irecv(inbuf[inbi], max_segcount, dtype, recv_from,
+        //ret = MCA_PML_CALL(irecv(inbuf[inbi], max_segcount, dtype, recv_from,
+        ret = MCA_PML_CALL(irecv(inbuf[inbi], max_segcount, rdtype, recv_from,
                                  MCA_COLL_BASE_TAG_ALLREDUCE, comm, &reqs[inbi]));
         if (MPI_SUCCESS != ret) { line = __LINE__; goto error_hndl; }
 
@@ -605,11 +627,14 @@ ompi_coll_base_allreduce_intra_mixed_precision_ring(const void *sbuf, void *rbuf
                         ((ptrdiff_t)prevblock * late_segcount + split_rank));
         block_count = ((prevblock < split_rank)? early_segcount : late_segcount);
         tmprecv = ((char*)new_rbuf) + (ptrdiff_t)block_offset * extent;
+        t3 = MPI_Wtime();
         op_sum(inbuf[inbi ^ 0x1], tmprecv, &block_count, new_type);
+        t4 = MPI_Wtime();
+        duration += (t4 - t3);
 
-        //printf("\n### Rank %d about to send buffer @ %p\n", rank, tmprecv);
         /* send previous block to send_to */
-        ret = MCA_PML_CALL(send(tmprecv, block_count, dtype, send_to,
+        //ret = MCA_PML_CALL(send(tmprecv, block_count, dtype, send_to,
+        ret = MCA_PML_CALL(send(tmprecv, block_count, rdtype, send_to,
                                 MCA_COLL_BASE_TAG_ALLREDUCE,
                                 MCA_PML_BASE_SEND_STANDARD, comm));
         if (MPI_SUCCESS != ret) { line = __LINE__; goto error_hndl; }
@@ -627,7 +652,10 @@ ompi_coll_base_allreduce_intra_mixed_precision_ring(const void *sbuf, void *rbuf
                     ((ptrdiff_t)recv_from * late_segcount + split_rank));
     block_count = ((recv_from < split_rank)? early_segcount : late_segcount);
     tmprecv = ((char*)new_rbuf) + (ptrdiff_t)block_offset * extent;
+    t3 = MPI_Wtime();
     op_sum(inbuf[inbi], tmprecv, &block_count, new_type);
+    t4 = MPI_Wtime();
+    duration += (t4 - t3);
 
     /* Distribution loop - variation of ring allgather */
     send_to = (rank + 1) % size;
@@ -649,23 +677,35 @@ ompi_coll_base_allreduce_intra_mixed_precision_ring(const void *sbuf, void *rbuf
         tmprecv = (char*)new_rbuf + (ptrdiff_t)recv_block_offset * extent;
         tmpsend = (char*)new_rbuf + (ptrdiff_t)send_block_offset * extent;
 
-        ret = ompi_coll_base_sendrecv(tmpsend, block_count, dtype, send_to,
+        //ret = ompi_coll_base_sendrecv(tmpsend, block_count, dtype, send_to,
+        ret = ompi_coll_base_sendrecv(tmpsend, block_count, rdtype, send_to,
                                        MCA_COLL_BASE_TAG_ALLREDUCE,
-                                       tmprecv, max_segcount, dtype, recv_from,
+                                       //tmprecv, max_segcount, dtype, recv_from,
+                                       tmprecv, max_segcount, rdtype, recv_from,
                                        MCA_COLL_BASE_TAG_ALLREDUCE,
                                        comm, MPI_STATUS_IGNORE, rank);
         if (MPI_SUCCESS != ret) { line = __LINE__; goto error_hndl;}
 
     }
 
+
     if (NULL != inbuf[0]) free(inbuf[0]);
     if (NULL != inbuf[1]) free(inbuf[1]);
 
     if (0 == ret1){
+        t1 = MPI_Wtime();
         conv_HALF_to_FLOAT(new_rbuf, (float*)rbuf, ps_iter);
+        t2 = MPI_Wtime();
+        conv_duration += (t2-t1);
     }else if(0 == ret2){
+        t1 = MPI_Wtime();
         conv_FLOAT_to_DOUBLE((float*)new_rbuf, (double*)rbuf, pd_iter);
+        t2 = MPI_Wtime();
+        conv_duration += (t2-t1);
     }
+    if (NULL != new_rbuf) free(new_rbuf);
+    printf("\n#op %lf\n", duration*1000000);
+    printf("\n#conv %lf\n", conv_duration*1000000);
     return MPI_SUCCESS;
 
  error_hndl:
@@ -694,6 +734,7 @@ ompi_coll_base_allreduce_intra_ring(const void *sbuf, void *rbuf, int count,
     ptrdiff_t block_offset, max_real_segsize;
     ompi_request_t *reqs[2] = {MPI_REQUEST_NULL, MPI_REQUEST_NULL};
 
+    double t1 = 0.0, t2 = 0.0, duration = 0.0;
     size = ompi_comm_size(comm);
     rank = ompi_comm_rank(comm);
 
@@ -785,7 +826,6 @@ ompi_coll_base_allreduce_intra_ring(const void *sbuf, void *rbuf, int count,
 
 
     tmpsend = ((char*)rbuf) + block_offset * extent;
-    //printf("\n### Rank %d about to send buffer tmpsend @ %p\n", rank, tmpsend);
     ret = MCA_PML_CALL(send(tmpsend, block_count, dtype, send_to,
                             MCA_COLL_BASE_TAG_ALLREDUCE,
                             MCA_PML_BASE_SEND_STANDARD, comm));
@@ -797,8 +837,6 @@ ompi_coll_base_allreduce_intra_ring(const void *sbuf, void *rbuf, int count,
         inbi = inbi ^ 0x1;
 
         /* Post irecv for the current block */
-        // J.L : recv FLOAT buffer
-        //printf("\n### Rank %d about to recv buffer inbuf[%d] @ %p\n", inbi, rank, &inbuf[inbi]);
         ret = MCA_PML_CALL(irecv(inbuf[inbi], max_segcount, dtype, recv_from,
                                  MCA_COLL_BASE_TAG_ALLREDUCE, comm, &reqs[inbi]));
         if (MPI_SUCCESS != ret) { line = __LINE__; goto error_hndl; }
@@ -815,10 +853,11 @@ ompi_coll_base_allreduce_intra_ring(const void *sbuf, void *rbuf, int count,
                         ((ptrdiff_t)prevblock * late_segcount + split_rank));
         block_count = ((prevblock < split_rank)? early_segcount : late_segcount);
         tmprecv = ((char*)rbuf) + (ptrdiff_t)block_offset * extent;
+        t1 = MPI_Wtime();
         ompi_op_reduce(op, inbuf[inbi ^ 0x1], tmprecv, block_count, dtype);
+        t2 = MPI_Wtime();
+        duration += (t2 - t1);
 
-
-        //printf("\n### Rank %d about to send buffer @ %p\n", rank, tmprecv);
         /* send previous block to send_to */
         ret = MCA_PML_CALL(send(tmprecv, block_count, dtype, send_to,
                                 MCA_COLL_BASE_TAG_ALLREDUCE,
@@ -838,7 +877,10 @@ ompi_coll_base_allreduce_intra_ring(const void *sbuf, void *rbuf, int count,
                     ((ptrdiff_t)recv_from * late_segcount + split_rank));
     block_count = ((recv_from < split_rank)? early_segcount : late_segcount);
     tmprecv = ((char*)rbuf) + (ptrdiff_t)block_offset * extent;
+    t1 = MPI_Wtime();
     ompi_op_reduce(op, inbuf[inbi], tmprecv, block_count, dtype);
+    t2 = MPI_Wtime();
+    duration += (t2 - t1);
 
     /* Distribution loop - variation of ring allgather */
     send_to = (rank + 1) % size;
@@ -869,6 +911,7 @@ ompi_coll_base_allreduce_intra_ring(const void *sbuf, void *rbuf, int count,
 
     }
 
+    printf("%f,", duration*1000000);
     if (NULL != inbuf[0]) free(inbuf[0]);
     if (NULL != inbuf[1]) free(inbuf[1]);
 

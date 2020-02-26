@@ -45,4 +45,6 @@ libmca_coll_la_SOURCES += \
         base/coll_base_reduce_scatter.c \
         base/coll_base_reduce_scatter_block.c \
         base/coll_base_exscan.c \
-        base/coll_base_scan.c
+        base/coll_base_scan.c \
+		base/precision_reduction.c
+

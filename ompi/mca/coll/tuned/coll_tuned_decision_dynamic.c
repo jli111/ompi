@@ -129,6 +129,7 @@ int ompi_coll_tuned_alltoall_intra_dec_dynamic(const void *sbuf, int scount,
                                                            rbuf, rcount, rdtype,
                                                            comm, module,
                                                            alg, faninout, segsize, max_requests);
+
         } /* found a method */
     } /*end if any com rules to check */
 
